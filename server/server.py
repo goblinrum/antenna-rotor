@@ -41,9 +41,9 @@ def get_iss_location():
     Get the current position of the ISS from Open Notify API
     """
     try:
-        # Request data from Open Notify API
+        ## TODO: Replace with https://celestrak.org/NORAD/elements/ and TLE data
         response = requests.get('http://api.open-notify.org/iss-now.json')
-        ## TODO: use sensor gps data to request from API
+        ## TODO: use sensor gps data and calculate using a SGP4 library: https://pypi.org/project/sgp4/
         data = response.json()
         coords = {
             'latitude': float(data['iss_position']['latitude']),
