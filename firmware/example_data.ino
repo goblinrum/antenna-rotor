@@ -27,7 +27,8 @@ void loop() {
     // Step 2: 
     //  - Option 1: use the gps data to directly request API
     //  - Option 2: send GPS data to computer, and have computer request API
-    // Step 3: use the API data to control the motors
+    // Step 3: use the API data to calculate the position needed
+    // uses library like this: https://github.com/Hopperpop/Sgp4-Library
     // this enters tracking mode
     // Step 4: send the motor data to the computer every 10 seconds
 }
