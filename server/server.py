@@ -5,9 +5,33 @@ import requests
 
 app = Flask(__name__)
 
-# Setup the serial connection to Arduino - replace '/dev/ttyACM0' with your actual COM port
-ser = serial.Serial('COM4', baudrate=9600, timeout=1)
-time.sleep(2)  # Wait for the connection to settle
+# Setup the serial connection
+ser = None
+
+@app.route('/connect_com')
+def connect_com():
+    """
+    only connect to the com port when ready
+    """
+    try: 
+        global ser
+        ser = serial.Serial('COM4', 9600, timeout=1)
+        time.sleep(2)  # Give Arduino time to reset
+        return jsonify({'message': 'Connected to COM4'})
+    except serial.SerialException as e:
+        return jsonify({'error': f'Error connecting to COM: {e}'}), 500
+
+@app.route('/disconnect_com')
+def disconnect_com():
+    """
+    Disconnect from the com port
+    """
+    try:
+        global ser
+        ser.close()
+        return jsonify({'message': 'Disconnected from COM4'})
+    except serial.SerialException as e:
+        return jsonify({'error': f'Error disconnecting from COM: {e}'}), 500
 
 @app.route('/get_sensor_data')
 def get_sensor_data():
@@ -22,12 +46,8 @@ def get_sensor_data():
         data = ser.readline().decode('utf-8').rstrip()
         
         # Parse the CSV data from Arduino
-        lat, lng, motor1, motor2 = data.split(",")
         coords = {
-            'latitude': float(lat),
-            'longitude': float(lng),
-            'motor1': float(motor1),
-            'motor2': float(motor2)
+            'data': data,
         }
         return jsonify(coords)
     except serial.SerialException as e:
@@ -41,17 +61,18 @@ def get_iss_location():
     Get the current position of the ISS from Open Notify API
     """
     try:
-        ## TODO: Replace with https://celestrak.org/NORAD/elements/ and TLE data
-        response = requests.get('http://api.open-notify.org/iss-now.json')
-        ## TODO: use sensor gps data and calculate using a SGP4 library: https://pypi.org/project/sgp4/
-        data = response.json()
-        coords = {
-            'latitude': float(data['iss_position']['latitude']),
-            'longitude': float(data['iss_position']['longitude'])
-        }
-        return jsonify(coords)
+        response = requests.get('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle')
+        data = response.text.splitlines()
+        res = []
+        # iterate through and find the ISS, then return that and the next two lines
+        for i, line in enumerate(data):
+            if line.startswith('ISS (ZARYA)'):
+                res.append(data[i+1].strip())
+                res.append(data[i+2].strip())
+                break
+        return res, 200
     except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Open Notify API error: {e}'}), 500 
+        return jsonify({'error': f'Error getting ISS location: {e}'}), 500
     
 @app.route('/send_position_to_esp')
 def send_iss_location_to_esp():
@@ -59,10 +80,15 @@ def send_iss_location_to_esp():
     Get the current position of the ISS from Open Notify API
     and send it to the ESP32
     """
-    res = get_iss_location()
-    if res.status_code == 200:
-        data = res.json()
-        ser.write(f"set_coords,{data['latitude']},{data['longitude']}\n".encode('utf-8'))
+    res, status_code = get_iss_location()
+    if status_code == 200:
+        # send the 3 lines of data to the ESP32
+        data = res
+        print(res)
+        send_data = ""
+        for line in data:
+            send_data += line + "\n"
+        ser.write(send_data.encode('utf-8'))
         return jsonify({'message': 'Position sent to ESP32'})
     else:
         return jsonify({'error': 'Error getting ISS location'}), 500
