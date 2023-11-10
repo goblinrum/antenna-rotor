@@ -6,7 +6,7 @@ import requests
 app = Flask(__name__)
 
 # Setup the serial connection to Arduino - replace '/dev/ttyACM0' with your actual COM port
-ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+ser = serial.Serial('COM4', baudrate=9600, timeout=1)
 time.sleep(2)  # Wait for the connection to settle
 
 @app.route('/get_sensor_data')
@@ -70,4 +70,4 @@ def send_iss_location_to_esp():
 ## TODO: control panel code
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
