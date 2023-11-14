@@ -15,7 +15,7 @@ def connect_com():
     """
     try: 
         global ser
-        ser = serial.Serial('COM4', 9600, timeout=1)
+        ser = serial.Serial('COM3', 9600, timeout=1)
         time.sleep(2)  # Give Arduino time to reset
         return jsonify({'message': 'Connected to COM4'})
     except serial.SerialException as e:
@@ -42,14 +42,14 @@ def get_sensor_data():
     try:
         # Request data from Arduino
         ser.write(b'get_coords\n')
-        time.sleep(2)  # Give Arduino time to respond
-        data = ser.readline().decode('utf-8').rstrip()
+        time.sleep(2)  # Give Arduino time to respond and decode from bytes to string
+        data = ser.readline().decode('utf-8', errors='ignore').strip()
         
         # Parse the CSV data from Arduino
         coords = {
             'data': data,
         }
-        return jsonify(coords)
+        return coords, 200
     except serial.SerialException as e:
         return jsonify({'error': f'Serial communication error: {e}'}), 500
     except ValueError as e:
