@@ -92,3 +92,13 @@ TODO
 
 ### Helper functions
 TODO
+
+
+## Testing
+Currently, server functions use Pytest for testing. To run the tests, run the following command:
+
+```bash
+pytest
+```
+
+You need to make sure your `.env` file is set up correctly. You can use the `.env.example` file as a template.
