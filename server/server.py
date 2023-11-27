@@ -17,7 +17,8 @@ ser = None
 lat = 0
 lon = 0
 alt = 0
-
+azi = 0
+ele = 0
 
 #################### COM PORT CONTROLS ####################
 # These are used to connect to the ESP32 via serial communication
@@ -61,17 +62,20 @@ def get_sensor_data():
         data = ser.readline().decode('utf-8', errors='ignore').strip()
         
         # Parse the CSV data from esp32
-        coords = {
-            'data': data,
-        }
-
         global lat, lon, alt
-        lat, lon, alt = data.split(',')
+        lat, lon, alt, azi, ele = data.split(',')
+        coords = {
+            'latitude': float(lat),
+            'longitude': float(lon),
+            'altitude': float(alt),
+            'azimuth': float(azi),
+            'elevation': float(ele),
+        }
         return coords, 200
     except serial.SerialException as e:
         return jsonify({'error': f'Serial communication error: {e}'}), 500
     except ValueError as e:
-        return jsonify({'error': f'Data parsing error: {e}'}), 500
+        return jsonify({'error': f'Data parsing error: {e}\n, actual data {data}'}), 500
     
 @app.route('/send_position_to_esp')
 def send_iss_location_to_esp():
