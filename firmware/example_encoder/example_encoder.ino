@@ -1,51 +1,48 @@
-#include <Wire.h>
-#include <AS5600.h>
-#ifdef ARDUINO_SAMD_VARIANT_COMPLIANCE
-  #define SERIAL SerialUSB
-  #define SYS_VOL   3.3
-#else
-  #define SERIAL Serial
-  #define SYS_VOL   5
-#endif
+//
+//    FILE: AS5600_position.ino
+//  AUTHOR: Rob Tillaart
+// PURPOSE: demo
+//    DATE: 2022-12-20
 
-AMS_5600 ams5600;
 
-int ang, lang = 0;
+#include "AS5600.h"
+#include "Wire.h"
+
+AS5600 as5600;   //  use default Wire
+
 
 void setup()
 {
-  SERIAL.begin(115200);
-  Wire.begin();
-  SERIAL.println(">>>>>>>>>>>>>>>>>>>>>>>>>>> ");
-  if(ams5600.detectMagnet() == 0 ){
-    while(1){
-        if(ams5600.detectMagnet() == 1 ){
-            SERIAL.print("Current Magnitude: ");
-            SERIAL.println(ams5600.getMagnitude());
-            break;
-        }
-        else{
-            SERIAL.println("Can not detect magnet");
-        }
-        delay(1000);
-    }
-  }
+  Serial.begin(115200);
+  Serial.println(__FILE__);
+  Serial.print("AS5600_LIB_VERSION: ");
+  Serial.println(AS5600_LIB_VERSION);
+
+  //  ESP32
+  //  as5600.begin(14, 15);
+  //  AVR
+  as5600.begin(4);  //  set direction pin.
+  as5600.setDirection(AS5600_CLOCK_WISE);  // default, just be explicit.
+
+  Serial.println(as5600.getAddress());
+
+  //  as5600.setAddress(0x40);  // AS5600L only
+
+  int b = as5600.isConnected();
+  Serial.print("Connect: ");
+  Serial.println(b);
+
+  delay(1000);
 }
-/*******************************************************
-/* Function: convertRawAngleToDegrees
-/* In: angle data from AMS_5600::getRawAngle
-/* Out: human readable degrees as float
-/* Description: takes the raw angle and calculates
-/* float value in degrees.
-/*******************************************************/
-float convertRawAngleToDegrees(word newAngle)
-{
-  /* Raw data reports 0 - 4095 segments, which is 0.087 of a degree */
-  float retVal = newAngle * 0.087;
-  ang = retVal;
-  return ang;
-}
+
+
 void loop()
 {
-    SERIAL.println(String(convertRawAngleToDegrees(ams5600.getRawAngle()),DEC));
+  static uint32_t lastTime = 0;
+  Serial.println(as5600.rawAngle() * AS5600_RAW_TO_DEGREES);
+
+  delay(100);
 }
+
+
+// -- END OF FILE --
