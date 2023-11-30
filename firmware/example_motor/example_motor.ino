@@ -1,14 +1,22 @@
 #include "AS5600.h"
 #include "Wire.h"
 
-#define IN1 22
-#define IN2 23
-#define PWM 21
+#define IN1 2
+#define IN2 4
+#define PWM 15
 
 AS5600 as5600;   //  use default Wire
 
 float offset = 0;
 float adjustedAngle = 0;
+float desiredAngle = 0;
+float integral = 0;
+float previous_error = 0;
+
+// PID coefficients
+float kp = 0.5;  // Proportional coefficient
+float ki = 0.5;  // Integral coefficient
+float kd = 0.01;  // Derivative coefficient
 
 void setup() {
 
@@ -37,23 +45,24 @@ void setup() {
 
 void loop() {
   getAngle();
-  Serial.println(adjustedAngle);
+  Serial.println("Enter an angle between 0 and 360");
+  if (Serial.available() > 0) {
+    desiredAngle = Serial.parseFloat();
+  }
+  desiredAngle = Serial.parseFloat();
+  move_to_angle();
   delay(100);
+  Serial.println(adjustedAngle);
 
-  // Motor_Brake();
-  // delay(100);
-  // Motor_Forward(70); // Forward, PWM setting 0-255
-  // delay(3000);
-  // Motor_Brake();
-  // delay(100);
-  // Motor_Backward(70); // Reverse, PWM setting 0-255  
-  // delay(3000);
 }
 
 void calibrate_encoder() {
   Serial.println("Move the motor to the zero position");
-  delay(1000);
+  delay(2000);
   offset = as5600.rawAngle() * AS5600_RAW_TO_DEGREES;
+  Serial.println("Calibration complete");
+  Serial.print("Offset: ");
+  Serial.println(offset);
 }
 
 void getAngle() {
@@ -62,6 +71,28 @@ void getAngle() {
     adjustedAngle += 360;
   } else if (adjustedAngle >= 360) {
     adjustedAngle -= 360;
+  }
+}
+
+void move_to_angle() {
+  float leeway = 5;
+  // find delta considering mod 360
+  float delta = int(desiredAngle - adjustedAngle) % 360;
+  if (abs(delta) < leeway) {
+    move_motor(0);
+  } else {
+    move_motor(40);
+  }
+}
+
+
+void move_motor(int speed) {
+  if (speed > 0) {
+    Motor_Forward(speed);
+  } else if (speed < 0) {
+    Motor_Backward(-speed);
+  } else {
+    Motor_Brake();
   }
 }
 
