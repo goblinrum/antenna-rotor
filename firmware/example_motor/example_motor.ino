@@ -1,5 +1,6 @@
 #include "AS5600.h"
 #include "Wire.h"
+#include <PID_v1.h>
 
 #define IN1 2
 #define IN2 4
@@ -8,15 +9,15 @@
 AS5600 as5600;   //  use default Wire
 
 float offset = 0;
-float adjustedAngle = 0;
-float desiredAngle = 0;
-float integral = 0;
-float previous_error = 0;
+double adjustedAngle = 0;
+double desiredAngle = 0;
+double output = 0;
 
 // PID coefficients
-float kp = 0.5;  // Proportional coefficient
-float ki = 0.5;  // Integral coefficient
-float kd = 0.01;  // Derivative coefficient
+double kp = 5;  // Proportional coefficient
+double ki = 0.1;  // Integral coefficient
+double kd = 0.05;  // Derivative coefficient
+PID myPID(&adjustedAngle, &output, &desiredAngle, kp, ki, kd, DIRECT);
 
 void setup() {
 
@@ -41,6 +42,8 @@ void setup() {
   pinMode(PWM, OUTPUT);
 
   calibrate_encoder();
+
+  myPID.SetMode(AUTOMATIC);
 }
 
 void loop() {
@@ -50,9 +53,15 @@ void loop() {
     desiredAngle = Serial.parseFloat();
   }
   desiredAngle = Serial.parseFloat();
+  myPID.Compute();
   move_to_angle();
   delay(100);
+  Serial.print("Desired angle: ");
+  Serial.println(desiredAngle);
+  Serial.print("Adjusted angle: ");
   Serial.println(adjustedAngle);
+  Serial.print("Output: ");
+  Serial.println(output);
 
 }
 
@@ -81,7 +90,9 @@ void move_to_angle() {
   if (abs(delta) < leeway) {
     move_motor(0);
   } else {
-    move_motor(40);
+    // constrain motor output to -70/70
+    output = constrain(output, -60, 60);
+    move_motor(output);
   }
 }
 
