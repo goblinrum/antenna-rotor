@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Include the CesiumJS JavaScript and CSS files -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <script type="module" src="./get_iss.js"></script>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <script type="module">
+    // import { getISSData } from './get_iss.js';
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxMjcyMGFiZC0wYzc3LTQ1YjgtYmQyYS1iMTM5YmVkOGE5ZWUiLCJpZCI6MTc5NjExLCJpYXQiOjE3MDA1MDE1OTN9.09PsRneHLzb-idmJXLkQ5XFcqZiyuoVz4H6q9LKVMKw'
+
+    (async () => {
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+        terrain: Cesium.Terrain.fromWorldTerrain(),
+        });
+
+        const osmBuildings = await Cesium.createOsmBuildingsAsync();
+        viewer.scene.primitives.add(osmBuildings);
+
+        async function loadModel() {
+        // const initPos = Cesium.Cartesian3.fromDegrees(-118.2437, 34.0522, 5000000);
+        // Load the glTF model from Cesium ion.
+            
+            
+            // issData = [elevation, latitude, longitude, user_latitude, user_longitude]
+            const issData = await getISSData();
+            const elevation = issData[0];
+            const latitude = issData[1];
+            const longitude = issData[2];
+            const user_latitude = issData[3];
+            const user_longitude = issData[4];
+
+            // antenna setting and loading
+            const antennaURI = await Cesium.IonResource.fromAssetId(2378468);
+            const antennaEntity = viewer.entities.add({
+                // position: Cesium.Cartesian3.fromDegrees(user_longitude, user_latitude), 
+                position: Cesium.Cartesian3.fromDegrees(0, 0, 0),
+
+                model: { uri: antennaURI, scale: 5000 } 
+            });
+            
+            // iss setting and loading
+            const issURI = await Cesium.IonResource.fromAssetId(2360385);
+            const issEntity = viewer.entities.add({
+                // position: Cesium.Cartesian3.fromDegress(longitude, latitude, elevation),
+                position: Cesium.Cartesian3.fromDegrees(0, 0, 5000000),
+                model: { uri: issURI, scale: 50000 },
+                // Trailing path of ISS
+                path: new Cesium.PathGraphics({ width: 1.5, leadTime: -1 })
+            });
+    
+            
+        }
+        await loadModel();
+        Sandcastle.finishedLoading();  
+    })();
+  </script>
+ </div>
+</body>
+</html>
