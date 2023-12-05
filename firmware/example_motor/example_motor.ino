@@ -8,10 +8,10 @@
 
 AS5600 as5600;   //  use default Wire
 
-float offset = 0;
+double offset = 0;
 double adjustedAngle = 0;
 double desiredAngle = 0;
-double output = 0;
+double motorOutput = 0;
 
 // PID coefficients
 double kp = 5;  // Proportional coefficient
