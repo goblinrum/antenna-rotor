@@ -10,18 +10,22 @@
 #include "esp_sntp.h"
 #include <PID_v1.h>
 
+// interactive UI
+#define LED 2
+#define BUTTON 4
+
 // user Serial 2 for GPS
 #define RXD2 16
 #define TXD2 17
 
 // motor definitions
-#define IN1 2
-#define IN2 4
-#define PWM_V 15
+#define IN1 32
+#define IN2 33
+#define PWM_V 35
 
-#define IN3 18
+#define IN3 5 // !outputs PWM at boot
 #define IN4 19
-#define PWM_H 5
+#define PWM_H 18
 
 // encoder definitions
 AS5600 as5600_0(&Wire);
@@ -107,6 +111,10 @@ void setup() {
   Serial2.begin(9600);
   // setup screen
   setup_screen();
+  // setup button
+  pinMode(BUTTON, INPUT);
+  // setup LED
+  pinMode(LED, OUTPUT);
   // setup GPS
   setup_gps();
   // setup encoders
@@ -119,6 +127,10 @@ void setup() {
 State machine management on loop 
 */
 void loop() {
+  // if button is pressed, go back to process_tle state (interrupts other states and updates the db)
+  if (digitalRead(BUTTON) == HIGH) {
+    state = PROCESS_TLE;
+  }
 
   switch (state) {
     // case 1: wait to receive TLE data from computer
@@ -228,6 +240,7 @@ void update_server() {
       Serial.println(String(satLat) + "," + String(satLon) + "," + String(satAlt) + "," + String(azi) + "," + String(ele));
     }
   }
+  state = PREDICT;
 }
 
 ////////////////////// Utility Functions //////////////////////
@@ -307,14 +320,23 @@ void setup_screen() {
 }
 
 void calibrate_encoders() {
-  delay(2000);
-  offsetH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES;
-  offsetV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES;
+  // stay in this loop until the button is pressed
+  // light LED to indicate that the button needs to be pressed
+  digitalWrite(LED, HIGH);
+  while (digitalRead(BUTTON) == LOW) {
+    // if the button is pressed, save the current angle as the offset
+    if (digitalRead(BUTTON) == HIGH) {
+      offsetH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES;
+      offsetV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES;
+      digitalWrite(LED, LOW);
+      break;
+    }
+  }
 }
 
 void setup_encoders() {  
   // 2 I2C buses
-  Wire.begin(12, 13);
+  Wire.begin(14, 13);
   Wire1.begin(26, 27);
 
   as5600_0.begin(4);  // (SDA, SCL)
