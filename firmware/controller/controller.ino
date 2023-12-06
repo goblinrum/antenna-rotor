@@ -15,18 +15,17 @@
 #define TXD2 17
 
 // motor definitions
-// TODO: assign pins
 #define IN1 2
 #define IN2 4
-#define PWM1 15
+#define PWM_V 15
 
 #define IN3 18
 #define IN4 19
-#define PWM2 26
+#define PWM_H 5
 
 // encoder definitions
-AS5600 as5600R;
-AS5600 as5600V;
+AS5600 as5600_0(&Wire);
+AS5600 as5600_1(&Wire1);
 
 // encoder readings
 double offsetH = 0;
@@ -39,36 +38,37 @@ double desiredAngleV = 0;
 double motorOutputV = 0;
 
 // PID coefficients
-double kp = 5;  // Proportional coefficient
-double ki = 0.1;  // Integral coefficient
+double kp = 5;     // Proportional coefficient
+double ki = 0.1;   // Integral coefficient
 double kd = 0.05;  // Derivative coefficient
-PID PIDController(&adjustedAngle, &output, &desiredAngle, kp, ki, kd, DIRECT);
+PID PIDControllerH(&adjustedAngleH, &motorOutputH, &desiredAngleH, kp, ki, kd, DIRECT);
+PID PIDControllerV(&adjustedAngleV, &motorOutputV, &desiredAngleV, kp, ki, kd, DIRECT);
 
 // screen definitions
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 32 // OLED display height, in pixels
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+#define SCREEN_WIDTH 128     // OLED display width, in pixels
+#define SCREEN_HEIGHT 32     // OLED display height, in pixels
+#define OLED_RESET -1        // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C  ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // GPS definitons
 char gps[64];
-int count = 0; 
+int count = 0;
 
 // processing gps data
 char *token;
-const char delimiter[2] = ","; 
+const char delimiter[2] = ",";
 
 // positional arguments
-float lat = 0; // latitude
-float lon = 0; // longitude
-float alt = 0; // altutide
-float azi = 0; // azimuth
-float ele = 0; // elevation
-float satLat = 0; // satellite lat
-float satLon = 0; // satellite long
-float satAlt = 0; // satellite altitude
-bool satVis = false; // satellite visibility
+float lat = 0;        // latitude
+float lon = 0;        // longitude
+float alt = 0;        // altutide
+float azi = 0;        // azimuth
+float ele = 0;        // elevation
+float satLat = 0;     // satellite lat
+float satLon = 0;     // satellite long
+float satAlt = 0;     // satellite altitude
+bool satVis = false;  // satellite visibility
 
 // TLE data
 char satname[] = "ISS (ZARYA)";
@@ -79,37 +79,47 @@ char tle_2[70];
 Sgp4 sat;
 Ticker tkSecond;
 unsigned long unixtime = 0;
-int timezone = -8 ;  //utc - 8
+int timezone = -8;  //utc - 8
 int framerate;
-int year; int mon; int day; int hr; int minute; double sec;
+int year;
+int mon;
+int day;
+int hr;
+int minute;
+double sec;
 bool done_setup = false;
 
 // current state machine state enum
-enum state {PROCESS_TLE, PREDICT, TRACK_MOTOR, UPDATE_SERVER};
+enum { PROCESS_TLE,
+       PREDICT,
+       TRACK_MOTOR,
+       UPDATE_SERVER };
+unsigned char state;
 
 // Define an enumeration for motor identification
-enum Motor { MOTOR_1, MOTOR_2 };
+enum Motor { MOTOR_1,
+             MOTOR_2 };
 
 void setup() {
-    // set up serial connection to computer here
-    Serial.begin(9600);
-    // setup gps serial
-    Serial2.begin(9600);
-    // setup screen
-    setup_screen();
-    // setup GPS
-    setup_gps();
-    // setup encoders
-    setup_encoders();
-    // calibrate encoders
-    calibrate_encoders();
+  // set up serial connection to computer here
+  Serial.begin(9600);
+  // setup gps serial
+  Serial2.begin(9600);
+  // setup screen
+  setup_screen();
+  // setup GPS
+  setup_gps();
+  // setup encoders
+  setup_encoders();
+  // calibrate encoders
+  calibrate_encoders();
 }
 
 /*
 State machine management on loop 
 */
 void loop() {
-  
+
   switch (state) {
     // case 1: wait to receive TLE data from computer
     case PROCESS_TLE: process_tle(); break;
@@ -143,9 +153,7 @@ void setup_gps() {
       delay(1000);
       if (!fix && line.indexOf("GPRMC") != -1 && line.indexOf("V") == -1) {
         fix = true;
-      } else if ((fix && line.indexOf("GPGGA") != -1) || 
-                  (line.indexOf("GPRMC") != -1 && line.indexOf(",,,,") == -1) || 
-                  (line.indexOf("GPGGA") != -1 && line.indexOf(",,,") == -1)) {
+      } else if ((fix && line.indexOf("GPGGA") != -1) || (line.indexOf("GPRMC") != -1 && line.indexOf(",,,,") == -1) || (line.indexOf("GPGGA") != -1 && line.indexOf(",,,") == -1)) {
         clearBuffer();
         line.toCharArray(gps, 64);
         read_gps();
@@ -177,17 +185,16 @@ void process_tle() {
 Performs first time setup if not done yet, then loops to do the actual prediction
 */
 void predict() {
-  if (done_setup) { // predict based on new unixtime
-    unixtime = getTime();
+  if (done_setup) {  // predict based on new unixtime
     sat.findsat(unixtime);
     framerate += 1;
     state = TRACK_MOTOR;
-  } else { // first time setup
+  } else {  // first time setup
     sat.site(lat, lon, alt);
     sat.init(satname, tle_1, tle_2);
     double jdC = sat.satrec.jdsatepoch;
-    invjday(jdC , timezone, true, year, mon, day, hr, minute, sec);
-    tkSecond.attach(1,Second_Tick);
+    invjday(jdC, timezone, true, year, mon, day, hr, minute, sec);
+    tkSecond.attach(1, Second_Tick);
     done_setup = true;
   }
 }
@@ -199,7 +206,7 @@ Moves the motor to input azimuth and elevation
 3. Moves the motor to the desired angle
 */
 void track_motor() {
-  getAngle(); // Update the current angle of the motors
+  getAngle();  // Update the current angle of the motors
 
   // Adjusting Horizontal Motor
   adjustMotor(MOTOR_1, desiredAngleH, adjustedAngleH, motorOutputH);
@@ -231,17 +238,17 @@ https://github.com/Hopperpop/Sgp4-Library/blob/master/examples/Sgp4Tracker/Sgp4T
 */
 void Second_Tick() {
   unixtime += 1;
-       
-  invjday(sat.satJd , timezone,true, year, mon, day, hr, minute, sec);
-  
+
+  invjday(sat.satJd, timezone, true, year, mon, day, hr, minute, sec);
+
   azi = sat.satAz;
   ele = sat.satEl;
   satLat = sat.satLat;
   satLon = sat.satLon;
   satAlt = sat.satAlt;
   satVis = sat.satVis;
-     
-  framerate=0;
+
+  framerate = 0;
 }
 
 /* 
@@ -251,26 +258,26 @@ latitude, longitude, and altidude
 Transitions into process_tle()
 */
 void read_gps() {
-  token = strtok(gps, delimiter); // Initial tokenization
+  token = strtok(gps, delimiter);  // Initial tokenization
   char *end;
-  for (int i = 0; i < 12; i++) { // Loop to reach the required tokens
+  for (int i = 0; i < 12; i++) {  // Loop to reach the required tokens
     token = strtok(NULL, delimiter);
-    if (i == 1 || i == 2) { // Latitude
-      if (strstr(token, "S") == NULL && strstr(token, "N") == NULL) { // if it's a number
+    if (i == 1 || i == 2) {                                            // Latitude
+      if (strstr(token, "S") == NULL && strstr(token, "N") == NULL) {  // if it's a number
         lat = strtof(token, &end);
-        lat /= 100; // convert to degrees
-      } else if (strstr(token, "S") != NULL) { // if it's in the Southern Hemisphere
+        lat /= 100;                             // convert to degrees
+      } else if (strstr(token, "S") != NULL) {  // if it's in the Southern Hemisphere
         lat *= -1;
       }
-    } else if (i == 3 || i == 4) { // Longitude
-      if (strstr(token, "W") == NULL && strstr(token, "E") == NULL) { // if it's a number
+    } else if (i == 3 || i == 4) {                                     // Longitude
+      if (strstr(token, "W") == NULL && strstr(token, "E") == NULL) {  // if it's a number
         lon = strtof(token, &end);
-        lon /= 100; // convert to degrees
-      } else if (strstr(token, "W") != NULL) { // if it's in the West
+        lon /= 100;                             // convert to degrees
+      } else if (strstr(token, "W") != NULL) {  // if it's in the West
         lon *= -1;
       }
     } else if (i == 8 || i == 9) {
-      if (strstr(token, "M") == NULL) { // if it's a number
+      if (strstr(token, "M") == NULL) {  // if it's a number
         alt = strtof(token, &end);
       }
     }
@@ -284,60 +291,60 @@ void clearBuffer() {
 }
 
 void setup_screen() {
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
+    for (;;)
+      ;  // Don't proceed, loop forever
   }
   display.drawPixel(10, 10, SSD1306_WHITE);
   display.display();
   display.clearDisplay();
-  display.setTextSize(1);             // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE);        // Draw white text
-  display.setCursor(0,0);             // Start at top-left corner
+  display.setTextSize(1);               // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE);  // Draw white text
+  display.setCursor(0, 0);              // Start at top-left corner
   display.println("Welcome");
   display.display();
 }
 
 void calibrate_encoders() {
-  Serial.println("Move the motor to the zero position");
   delay(2000);
-  offsetH = as5600H.rawAngle() * AS5600_RAW_TO_DEGREES;
-  offsetV = as5600V.rawAngle() * AS5600_RAW_TO_DEGREES;
-  Serial.println("Calibration complete");
-  Serial.print("Offset: ");
-  Serial.println(offset);
+  offsetH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES;
+  offsetV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES;
 }
 
-void setup_encoders() {
-  // TODO: setup pins
-  as5600H.begin(27, 28);  // (SDA, SCL)
-  as5600H.setDirection(AS5600_CLOCK_WISE);
-  as5600V.begin(24, 25);  // (SDA, SCL)
-  as5600V.setDirection(AS5600_CLOCK_WISE);
+void setup_encoders() {  
+  // 2 I2C buses
+  Wire.begin(12, 13);
+  Wire1.begin(26, 27);
+
+  as5600_0.begin(4);  // (SDA, SCL)
+  as5600_0.setDirection(AS5600_CLOCK_WISE);
+  as5600_1.begin(5);  // (SDA, SCL)
+  as5600_1.setDirection(AS5600_CLOCK_WISE);
 
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
-  pinMode(PWM1, OUTPUT);
+  pinMode(PWM_V, OUTPUT);
 
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
-  pinMode(PWM2, OUTPUT);
+  pinMode(PWM_H, OUTPUT);
 }
 
 void move_motor(Motor motor, int speed) {
   if (motor == MOTOR_1) {
     if (speed > 0) {
-      Motor_Forward(IN1, IN2, PWM1, speed);
+      Motor_Forward(IN1, IN2, PWM_V, speed);
     } else if (speed < 0) {
-      Motor_Backward(IN1, IN2, PWM1, -speed);
+      Motor_Backward(IN1, IN2, PWM_V, -speed);
     } else {
       Motor_Brake(IN1, IN2);
     }
   } else if (motor == MOTOR_2) {
     if (speed > 0) {
-      Motor_Forward(IN3, IN4, PWM2, speed);
+      Motor_Forward(IN3, IN4, PWM_H, speed);
     } else if (speed < 0) {
-      Motor_Backward(IN3, IN4, PWM2, -speed);
+      Motor_Backward(IN3, IN4, PWM_H, -speed);
     } else {
       Motor_Brake(IN3, IN4);
     }
@@ -362,8 +369,8 @@ void Motor_Brake(int pinIN1, int pinIN2) {
 }
 
 void getAngle() {
-  adjustedAngleH = as5600H.rawAngle() * AS5600_RAW_TO_DEGREES - offsetH;
-  adjustedAngleV = as5600V.rawAngle() * AS5600_RAW_TO_DEGREES - offsetV;
+  adjustedAngleH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES - offsetH;
+  adjustedAngleV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES - offsetV;
   if (adjustedAngleH < 0) {
     adjustedAngleH += 360;
   } else if (adjustedAngleH >= 360) {
@@ -389,13 +396,25 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
   }
 
   // Update the PID Controller
-  PIDController.SetTunings(kp, ki, kd); // Make sure the PID tunings are set
-  PIDController.SetOutputLimits(-60, 60); // Constrain the output to -60/60
-  PIDController.SetMode(AUTOMATIC); // Set the PID to automatic mode
+  if (motor == MOTOR_1) {
+    PIDControllerH.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
+    PIDControllerH.SetOutputLimits(-60, 60);  // Constrain the output to -60/60
+    PIDControllerH.SetMode(AUTOMATIC);        // Set the PID to automatic mode
 
-  // Update the PID controller with the current angle and desired angle
-  PIDController.Compute();
+    // Update the PID controller with the current angle and desired angle
+    PIDControllerH.Compute();
 
-  // Use the output from the PID to move the motor
-  move_motor(motor, motorOutput);
+    // Use the output from the PID to move the motor
+    move_motor(motor, motorOutputH);
+  } else {
+    PIDControllerV.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
+    PIDControllerV.SetOutputLimits(-60, 60);  // Constrain the output to -60/60
+    PIDControllerV.SetMode(AUTOMATIC);        // Set the PID to automatic mode
+
+    // Update the PID controller with the current angle and desired angle
+    PIDControllerV.Compute();
+
+    // Use the output from the PID to move the motor
+    move_motor(motor, motorOutputV);
+  }
 }
