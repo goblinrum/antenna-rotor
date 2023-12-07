@@ -12,7 +12,9 @@
 
 // interactive UI
 #define LED 2
-#define BUTTON 4
+#define BUTTON_F 23 // button to move vertical arm
+#define BUTTON_R 34 // button to move horizontal arm
+#define BUTTON_SEL 35 // button to select
 
 // user Serial 2 for GPS
 #define RXD2 16
@@ -21,9 +23,9 @@
 // motor definitions
 #define IN1 32
 #define IN2 33
-#define PWM_V 35
+#define PWM_V 25
 
-#define IN3 5 // !outputs PWM at boot
+#define IN3 5
 #define IN4 19
 #define PWM_H 18
 
@@ -101,8 +103,8 @@ enum { PROCESS_TLE,
 unsigned char state;
 
 // Define an enumeration for motor identification
-enum Motor { MOTOR_1,
-             MOTOR_2 };
+enum Motor { MOTOR_V,
+             MOTOR_H };
 
 void setup() {
   // set up serial connection to computer here
@@ -111,12 +113,14 @@ void setup() {
   Serial2.begin(9600);
   // setup screen
   setup_screen();
-  // setup button
-  pinMode(BUTTON, INPUT);
+  // setup buttons
+  pinMode(BUTTON_F, INPUT);
+  pinMode(BUTTON_R, INPUT);
+  pinMode(BUTTON_SEL, INPUT);
   // setup LED
   pinMode(LED, OUTPUT);
   // setup GPS
-  setup_gps();
+  // setup_gps();
   // setup encoders
   setup_encoders();
   // calibrate encoders
@@ -128,7 +132,7 @@ State machine management on loop
 */
 void loop() {
   // if button is pressed, go back to process_tle state (interrupts other states and updates the db)
-  if (digitalRead(BUTTON) == HIGH) {
+  if (digitalRead(BUTTON_SEL) == HIGH) {
     state = PROCESS_TLE;
   }
 
@@ -221,10 +225,10 @@ void track_motor() {
   getAngle();  // Update the current angle of the motors
 
   // Adjusting Horizontal Motor
-  adjustMotor(MOTOR_1, desiredAngleH, adjustedAngleH, motorOutputH);
+  adjustMotor(MOTOR_V, desiredAngleH, adjustedAngleH, motorOutputH);
 
   // Adjusting Vertical Motor
-  adjustMotor(MOTOR_2, desiredAngleV, adjustedAngleV, motorOutputV);
+  adjustMotor(MOTOR_H, desiredAngleV, adjustedAngleV, motorOutputV);
 
   state = UPDATE_SERVER;
 }
@@ -321,17 +325,33 @@ void setup_screen() {
 
 void calibrate_encoders() {
   // stay in this loop until the button is pressed
-  // light LED to indicate that the button needs to be pressed
+  // use BUTTON_F and BUTTON_R to move the motor forward and backward
   digitalWrite(LED, HIGH);
-  while (digitalRead(BUTTON) == LOW) {
-    // if the button is pressed, save the current angle as the offset
-    if (digitalRead(BUTTON) == HIGH) {
-      offsetH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES;
-      offsetV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES;
-      digitalWrite(LED, LOW);
-      break;
+  displayPrint("Calibrating elevation motor...");
+  while (digitalRead(BUTTON_SEL) == LOW) {
+    if (digitalRead(BUTTON_F) == HIGH) {
+      move_motor(MOTOR_V, 45);
+    } else if (digitalRead(BUTTON_R) == HIGH) {
+      move_motor(MOTOR_V, -45);
+    } else {
+      move_motor(MOTOR_V, 0);
     }
   }
+  delay(500);
+  displayPrint("Calibrating azimuth motor...");
+  while (digitalRead(BUTTON_SEL) == LOW) {
+    if (digitalRead(BUTTON_F) == HIGH) {
+      move_motor(MOTOR_H, 40);
+    } else if (digitalRead(BUTTON_R) == HIGH) {
+      move_motor(MOTOR_H, -40);
+    } else {
+      move_motor(MOTOR_H, 0);
+    }
+  }
+  offsetH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES;
+  offsetV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES;
+  digitalWrite(LED, LOW);
+  displayPrint("Calibration complete!");
 }
 
 void setup_encoders() {  
@@ -354,7 +374,7 @@ void setup_encoders() {
 }
 
 void move_motor(Motor motor, int speed) {
-  if (motor == MOTOR_1) {
+  if (motor == MOTOR_V) {
     if (speed > 0) {
       Motor_Forward(IN1, IN2, PWM_V, speed);
     } else if (speed < 0) {
@@ -362,7 +382,7 @@ void move_motor(Motor motor, int speed) {
     } else {
       Motor_Brake(IN1, IN2);
     }
-  } else if (motor == MOTOR_2) {
+  } else if (motor == MOTOR_H) {
     if (speed > 0) {
       Motor_Forward(IN3, IN4, PWM_H, speed);
     } else if (speed < 0) {
@@ -377,17 +397,20 @@ void Motor_Forward(int pinIN1, int pinIN2, int pinPWM, int Speed) {
   digitalWrite(pinIN1, HIGH);
   digitalWrite(pinIN2, LOW);
   analogWrite(pinPWM, Speed);
+  delay(200);
 }
 
 void Motor_Backward(int pinIN1, int pinIN2, int pinPWM, int Speed) {
   digitalWrite(pinIN1, LOW);
   digitalWrite(pinIN2, HIGH);
   analogWrite(pinPWM, Speed);
+  delay(200);
 }
 
 void Motor_Brake(int pinIN1, int pinIN2) {
   digitalWrite(pinIN1, LOW);
   digitalWrite(pinIN2, LOW);
+  delay(200);
 }
 
 void getAngle() {
@@ -418,7 +441,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
   }
 
   // Update the PID Controller
-  if (motor == MOTOR_1) {
+  if (motor == MOTOR_V) {
     PIDControllerH.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
     PIDControllerH.SetOutputLimits(-60, 60);  // Constrain the output to -60/60
     PIDControllerH.SetMode(AUTOMATIC);        // Set the PID to automatic mode
@@ -439,4 +462,11 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
     // Use the output from the PID to move the motor
     move_motor(motor, motorOutputV);
   }
+}
+
+void displayPrint(String text) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println(text);
+  display.display();
 }
