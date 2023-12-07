@@ -5,7 +5,7 @@ from datetime import datetime
 import ephem
 import requests
 import serial
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from sgp4.api import WGS72, Satrec, accelerated, jday
 
 app = Flask(__name__)
@@ -157,7 +157,76 @@ def calculate_iss_position():
             return jsonify({'error': 'Error getting ISS location'}), 500
     except Exception as e:
         return jsonify({'error': f'Error calculating ISS position: {e}'}), 500
+    
+@app.route('/predict_iss_position')
+def predict_iss_position():
+    """
+    Predicts the position of the ISS given a start, stop, and step time.
+    Uses the same logic as calculate_iss_position when determining geolocation.
+    Args:
+        start: the start time in unix time
+        stop: the stop time in unix time
+        step: the step time in seconds
 
+    Returns:
+        A list of positions of the ISS for each step time
+    """
+    # read the args
+    start = int(request.args.get('start'))
+    stop = int(request.args.get('stop'))
+    step = int(request.args.get('step'))
+
+    try:
+        # get the current geolocation
+        global lat, lon, alt
+        if lat == 0 and lon == 0 and alt == 0:
+            lat, lon = get_geolocation()
+            alt = 0
+        # use ephem to calculate the position
+        observer = ephem.Observer()
+        observer.lat = lat
+        observer.lon = lon
+        observer.elevation = alt
+        # get the TLE data
+        tle, status_code = get_iss_location()
+        if status_code == 200:
+            satname, tle_line1, tle_line2, unixtime = tle
+            # sat is for SGP4 calculations
+            # iss is for ephem calculations
+            sat = Satrec.twoline2rv(tle_line1, tle_line2)
+            iss = ephem.readtle(satname, tle_line1, tle_line2)
+            # use ephem to calculate relative position
+            res = []
+            for i in range(start, stop, step):
+                # convert start time to julian date
+                converted_time = datetime.fromtimestamp(i)
+                observer.date = converted_time
+                jd = ephem.julian_date(observer)
+                fr = 0.0
+                e, r, v = sat.sgp4(jd, fr)
+                iss.compute(observer)
+                res.append({
+                    'iss_position': {
+                        'azimuth': math.degrees(iss.az),
+                        'elevation': math.degrees(iss.alt),
+                        'longitude': math.degrees(iss.sublong),
+                        'latitude': math.degrees(iss.sublat),
+                    },
+                    'iss_direction': {
+                        'velocity': v,
+                        'radius position': r,
+                    },
+                    'user_location': {
+                        'latitude': float(lat),
+                        'longitude': float(lon),
+                        'altitude': float(alt),
+                    },
+                })
+            return jsonify(res), 200
+        else:
+            return jsonify({'error': 'Error getting ISS location'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Error predicting ISS position: {e}'}), 500
 
 #################### HELPER FUNCTIONS ####################
 # These are helper functions used by the API endpoints
