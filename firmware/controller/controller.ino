@@ -1,5 +1,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <ESP32Time.h>
 #include <Sgp4.h>
 #include <SPI.h>
 #include <Ticker.h>
@@ -66,9 +67,9 @@ char *token;
 const char delimiter[2] = ",";
 
 // positional arguments
-float lat = 0;        // latitude
-float lon = 0;        // longitude
-float alt = 0;        // altutide
+float lat = 37.8716;        // latitude
+float lon = -122.2728;        // longitude
+float alt = 140;        // altutide
 float azi = 0;        // azimuth
 float ele = 0;        // elevation
 float satLat = 0;     // satellite lat
@@ -77,7 +78,7 @@ float satAlt = 0;     // satellite altitude
 bool satVis = false;  // satellite visibility
 
 // TLE data
-char satname[] = "ISS (ZARYA)";
+char satname[70];
 char tle_1[70];
 char tle_2[70];
 
@@ -94,6 +95,9 @@ int hr;
 int minute;
 double sec;
 bool done_setup = false;
+
+//ESP32Time rtc;
+ESP32Time rtc(-3600 * 8);
 
 // current state machine state enum
 enum { PROCESS_TLE,
@@ -186,13 +190,20 @@ Transitons to predict()
 */
 void process_tle() {
   if (Serial.available()) {
-    String input = Serial.readString();
-    // then split input by \n and copy results to tle_1 and tle_2
-    int ind = input.indexOf('\n');
-    String line1 = input.substring(0, ind);
-    String line2 = input.substring(ind + 1);
-    line1.toCharArray(tle_1, 70);
-    line2.toCharArray(tle_2, 70);
+    String line1 = Serial.readStringUntil('\n');
+    String line2 = Serial.readStringUntil('\n');
+    String line3 = Serial.readStringUntil('\n');
+    String line4 = Serial.readStringUntil('\n');
+    line1.toCharArray(satname, 70);
+    line2.toCharArray(tle_1, 70);
+    line3.toCharArray(tle_2, 70);
+    // line 4 is a number with current unix time
+    unixtime = line4.toInt();
+
+    // set the RTC
+    rtc.setTime(unixtime);
+
+    displayPrint(String(unixtime));
     state = PREDICT;
   }
 }
@@ -202,7 +213,8 @@ Performs first time setup if not done yet, then loops to do the actual predictio
 */
 void predict() {
   if (done_setup) {  // predict based on new unixtime
-    sat.findsat(unixtime);
+    sat.findsat(rtc.getEpoch());
+    setDesiredAngle(azi, ele);
     framerate += 1;
     state = TRACK_MOTOR;
   } else {  // first time setup
@@ -222,6 +234,8 @@ Moves the motor to input azimuth and elevation
 3. Moves the motor to the desired angle
 */
 void track_motor() {
+  displayPrint("Tracking...");
+
   getAngle();  // Update the current angle of the motors
 
   // Adjusting Horizontal Motor
@@ -230,7 +244,8 @@ void track_motor() {
   // Adjusting Vertical Motor
   adjustMotor(MOTOR_H, desiredAngleV, adjustedAngleV, motorOutputV);
 
-  state = UPDATE_SERVER;
+  // state = UPDATE_SERVER;
+  state = PREDICT;
 }
 
 /*
@@ -443,7 +458,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
   // Update the PID Controller
   if (motor == MOTOR_V) {
     PIDControllerH.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
-    PIDControllerH.SetOutputLimits(-60, 60);  // Constrain the output to -60/60
+    PIDControllerH.SetOutputLimits(-50, 50);  // Constrain the output to -60/60
     PIDControllerH.SetMode(AUTOMATIC);        // Set the PID to automatic mode
 
     // Update the PID controller with the current angle and desired angle
@@ -453,7 +468,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
     move_motor(motor, motorOutputH);
   } else {
     PIDControllerV.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
-    PIDControllerV.SetOutputLimits(-60, 60);  // Constrain the output to -60/60
+    PIDControllerV.SetOutputLimits(-50, 50);  // Constrain the output to -60/60
     PIDControllerV.SetMode(AUTOMATIC);        // Set the PID to automatic mode
 
     // Update the PID controller with the current angle and desired angle
@@ -469,4 +484,10 @@ void displayPrint(String text) {
   display.setCursor(0, 0);
   display.println(text);
   display.display();
+}
+
+void setDesiredAngle(double azimuth, double elevation) {
+  // sets azimuth and elevation to desired angle
+  desiredAngleH = azimuth;
+  desiredAngleV = elevation;
 }

@@ -183,8 +183,11 @@ def get_iss_location():
         # iterate through and find the ISS, then return that and the next two lines
         for i, line in enumerate(data):
             if line.startswith('ISS (ZARYA)'):
+                res.append("ISS (ZARYA)")
                 res.append(data[i+1].strip())
                 res.append(data[i+2].strip())
+                # then add current unix time as an int
+                res.append(str(int(datetime.now().timestamp())))
                 break
         return res, 200
     except requests.exceptions.RequestException as e:
