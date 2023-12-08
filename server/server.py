@@ -18,7 +18,7 @@ lat = 0
 lon = 0
 alt = 0
 azi = 0
-ele = 
+ele = 0
 
 tle = None
 last_updated = None
