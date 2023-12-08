@@ -20,6 +20,9 @@ alt = 0
 azi = 0
 ele = 0
 
+tle = None
+last_updated = None
+
 #################### COM PORT CONTROLS ####################
 # These are used to connect to the ESP32 via serial communication
 @app.route('/connect_com')
@@ -125,11 +128,11 @@ def calculate_iss_position():
         # get the TLE data
         tle, status_code = get_iss_location()
         if status_code == 200:
-            tle_line1, tle_line2 = tle
+            satname, tle_line1, tle_line2, unixtime = tle
             # sat is for SGP4 calculations
             # iss is for ephem calculations
             sat = Satrec.twoline2rv(tle_line1, tle_line2)
-            iss = ephem.readtle('ISS (ZARYA)', tle_line1, tle_line2)
+            iss = ephem.readtle(satname, tle_line1, tle_line2)
             # use ephem to calculate relative position
             iss.compute(observer)
             e, r, v = sat.sgp4(jd, fr)
@@ -243,9 +246,13 @@ def get_geolocation():
     
 def get_iss_location():
     """
-    Get the current position of the ISS from Open Notify API
+    Get the current TLE data. 
     """
     try:
+        # if the last update is within the past hour and the TLE data is not None, then return the TLE data cached
+        global tle, last_updated
+        if last_updated and (datetime.now() - last_updated).seconds < 3600 and tle:
+            return tle, 200
         response = requests.get('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle')
         data = response.text.splitlines()
         res = []
@@ -258,6 +265,8 @@ def get_iss_location():
                 # then add current unix time as an int
                 res.append(str(int(datetime.now().timestamp())))
                 break
+        # cache the TLE data
+        tle = res
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500
@@ -266,4 +275,4 @@ def get_iss_location():
 #################### CONTROL PANEL ####################
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=9001)
