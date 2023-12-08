@@ -128,11 +128,11 @@ def calculate_iss_position():
         # get the TLE data
         tle, status_code = get_iss_location()
         if status_code == 200:
-            tle_line1, tle_line2 = tle
+            satname, tle_line1, tle_line2, unixtime = tle
             # sat is for SGP4 calculations
             # iss is for ephem calculations
             sat = Satrec.twoline2rv(tle_line1, tle_line2)
-            iss = ephem.readtle('ISS (ZARYA)', tle_line1, tle_line2)
+            iss = ephem.readtle(satname, tle_line1, tle_line2)
             # use ephem to calculate relative position
             iss.compute(observer)
             e, r, v = sat.sgp4(jd, fr)
@@ -275,4 +275,4 @@ def get_iss_location():
 #################### CONTROL PANEL ####################
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False, host='0.0.0.0')
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=9001)
