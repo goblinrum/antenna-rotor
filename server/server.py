@@ -267,6 +267,7 @@ def get_iss_location():
                 break
         # cache the TLE data
         tle = res
+        last_updated = datetime.now()
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500
