@@ -18,7 +18,10 @@ lat = 0
 lon = 0
 alt = 0
 azi = 0
-ele = 0
+ele = 
+
+tle = None
+last_updated = None
 
 #################### COM PORT CONTROLS ####################
 # These are used to connect to the ESP32 via serial communication
@@ -243,9 +246,13 @@ def get_geolocation():
     
 def get_iss_location():
     """
-    Get the current position of the ISS from Open Notify API
+    Get the current TLE data. 
     """
     try:
+        # if the last update is within the past hour and the TLE data is not None, then return the TLE data cached
+        global tle, last_updated
+        if last_updated and (datetime.now() - last_updated).seconds < 3600 and tle:
+            return tle, 200
         response = requests.get('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle')
         data = response.text.splitlines()
         res = []
@@ -258,6 +265,8 @@ def get_iss_location():
                 # then add current unix time as an int
                 res.append(str(int(datetime.now().timestamp())))
                 break
+        # cache the TLE data
+        tle = res
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500
