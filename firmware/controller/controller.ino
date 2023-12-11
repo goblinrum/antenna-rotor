@@ -17,18 +17,22 @@
 #define BUTTON_R 34 // button to move horizontal arm
 #define BUTTON_SEL 35 // button to select
 
+// limit switches
+#define LIMIT_F 4
+#define LIMIT_B 15
+
 // user Serial 2 for GPS
 #define RXD2 16
 #define TXD2 17
 
 // motor definitions
-#define IN1 32
-#define IN2 33
-#define PWM_V 25
+#define IN1 5
+#define IN2 19
+#define PWM_V 18
 
-#define IN3 5
-#define IN4 19
-#define PWM_H 18
+#define IN3 32
+#define IN4 33
+#define PWM_H 25
 
 // encoder definitions
 AS5600 as5600_0(&Wire);
@@ -38,16 +42,16 @@ AS5600 as5600_1(&Wire1);
 double offsetH = 0;
 double offsetV = 0;
 double adjustedAngleH = 0;
-double desiredAngleH = 0;
+double desiredAngleH = 45;
 double motorOutputH = 0;
 double adjustedAngleV = 0;
-double desiredAngleV = 0;
+double desiredAngleV = 45;
 double motorOutputV = 0;
 
 // PID coefficients
-double kp = 5;     // Proportional coefficient
+double kp = 1;     // Proportional coefficient
 double ki = 0.1;   // Integral coefficient
-double kd = 0.05;  // Derivative coefficient
+double kd = 0.25;  // Derivative coefficient
 PID PIDControllerH(&adjustedAngleH, &motorOutputH, &desiredAngleH, kp, ki, kd, DIRECT);
 PID PIDControllerV(&adjustedAngleV, &motorOutputV, &desiredAngleV, kp, ki, kd, DIRECT);
 
@@ -115,12 +119,17 @@ void setup() {
   Serial.begin(9600);
   // setup gps serial
   Serial2.begin(9600);
+  Wire.begin(13, 14);
+  Wire1.begin(27, 26);
+  delay(500);
   // setup screen
   setup_screen();
   // setup buttons
   pinMode(BUTTON_F, INPUT);
   pinMode(BUTTON_R, INPUT);
   pinMode(BUTTON_SEL, INPUT);
+  pinMode(LIMIT_F, INPUT);
+  pinMode(LIMIT_B, INPUT);
   // setup LED
   pinMode(LED, OUTPUT);
   // setup GPS
@@ -135,7 +144,7 @@ void setup() {
 State machine management on loop 
 */
 void loop() {
-  // if button is pressed, go back to process_tle state (interrupts other states and updates the db)
+  // if button SEL is pressed, go back to process_tle state (interrupts other states and updates the db)
   if (digitalRead(BUTTON_SEL) == HIGH) {
     state = PROCESS_TLE;
   }
@@ -214,7 +223,7 @@ Performs first time setup if not done yet, then loops to do the actual predictio
 void predict() {
   if (done_setup) {  // predict based on new unixtime
     sat.findsat(rtc.getEpoch());
-    setDesiredAngle(azi, ele);
+    // setDesiredAngle(azi, ele);
     framerate += 1;
     state = TRACK_MOTOR;
   } else {  // first time setup
@@ -234,18 +243,20 @@ Moves the motor to input azimuth and elevation
 3. Moves the motor to the desired angle
 */
 void track_motor() {
-  displayPrint("Tracking...");
+  displayPrint(String(desiredAngleH) + "\t" + String(desiredAngleV) + "\n" + String(adjustedAngleH) + "\t" + String(adjustedAngleV));
+  desiredAngleH++;
+  desiredAngleV++;
 
   getAngle();  // Update the current angle of the motors
 
   // Adjusting Horizontal Motor
-  adjustMotor(MOTOR_V, desiredAngleH, adjustedAngleH, motorOutputH);
+  adjustMotor(MOTOR_H, desiredAngleH, adjustedAngleH, motorOutputH);
 
   // Adjusting Vertical Motor
-  adjustMotor(MOTOR_H, desiredAngleV, adjustedAngleV, motorOutputV);
+  adjustMotor(MOTOR_V, desiredAngleV, adjustedAngleV, motorOutputV);
 
-  // state = UPDATE_SERVER;
-  state = PREDICT;
+  // update server
+  state = UPDATE_SERVER;
 }
 
 /*
@@ -365,19 +376,23 @@ void calibrate_encoders() {
   }
   offsetH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES;
   offsetV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES;
+  delay(500);
   digitalWrite(LED, LOW);
-  displayPrint("Calibration complete!");
+  displayPrint(String(offsetH) + "\t" + String(offsetV));
 }
 
 void setup_encoders() {  
   // 2 I2C buses
-  Wire.begin(14, 13);
-  Wire1.begin(26, 27);
 
-  as5600_0.begin(4);  // (SDA, SCL)
+  as5600_0.begin();  // (SDA, SCL)
   as5600_0.setDirection(AS5600_CLOCK_WISE);
-  as5600_1.begin(5);  // (SDA, SCL)
+  delay(1000);
+  as5600_1.begin();  // (SDA, SCL)
   as5600_1.setDirection(AS5600_CLOCK_WISE);
+  delay(1000);
+
+  as5600_0.resetPosition();
+  as5600_0.resetPosition();
 
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
@@ -389,6 +404,13 @@ void setup_encoders() {
 }
 
 void move_motor(Motor motor, int speed) {
+  // limit switches with default low state and high state when pressed
+  // stop motor if limit switch is pressed
+  if (digitalRead(LIMIT_F) == HIGH) {
+    speed = 0;
+  } else if (digitalRead(LIMIT_B) == HIGH) {
+    speed = 0;
+  }
   if (motor == MOTOR_V) {
     if (speed > 0) {
       Motor_Forward(IN1, IN2, PWM_V, speed);
@@ -412,25 +434,25 @@ void Motor_Forward(int pinIN1, int pinIN2, int pinPWM, int Speed) {
   digitalWrite(pinIN1, HIGH);
   digitalWrite(pinIN2, LOW);
   analogWrite(pinPWM, Speed);
-  delay(200);
+  delay(100);
 }
 
 void Motor_Backward(int pinIN1, int pinIN2, int pinPWM, int Speed) {
   digitalWrite(pinIN1, LOW);
   digitalWrite(pinIN2, HIGH);
   analogWrite(pinPWM, Speed);
-  delay(200);
+  delay(100);
 }
 
 void Motor_Brake(int pinIN1, int pinIN2) {
   digitalWrite(pinIN1, LOW);
   digitalWrite(pinIN2, LOW);
-  delay(200);
+  delay(100);
 }
 
 void getAngle() {
-  adjustedAngleH = as5600_0.rawAngle() * AS5600_RAW_TO_DEGREES - offsetH;
-  adjustedAngleV = as5600_1.rawAngle() * AS5600_RAW_TO_DEGREES - offsetV;
+  adjustedAngleH = as5600_0.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetH + 180;
+  adjustedAngleV = as5600_1.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetV + 90;
   if (adjustedAngleH < 0) {
     adjustedAngleH += 360;
   } else if (adjustedAngleH >= 360) {
@@ -444,39 +466,77 @@ void getAngle() {
 }
 
 void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, double &motorOutput) {
-  // Calculate the shortest path to the desired angle
-  double delta = desiredAngle - adjustedAngle;
-  // Adjust delta for the shortest path considering 270 degrees range
-  delta = fmod(delta + 405, 270) - 135;
-
-  // If delta is within the leeway, stop the motor
-  if (abs(delta) <= 5) {
-    move_motor(motor, 0);
-    return;
-  }
-
-  // Update the PID Controller
   if (motor == MOTOR_V) {
-    PIDControllerH.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
-    PIDControllerH.SetOutputLimits(-50, 50);  // Constrain the output to -60/60
-    PIDControllerH.SetMode(AUTOMATIC);        // Set the PID to automatic mode
-
-    // Update the PID controller with the current angle and desired angle
-    PIDControllerH.Compute();
-
-    // Use the output from the PID to move the motor
-    move_motor(motor, motorOutputH);
+    // don't use PID
+    // convert desired angle to 360
+    desiredAngle = fmod(desiredAngle + 360, 360);
+    double delta = desiredAngle - adjustedAngle;
+    if (abs(delta) <= 5) {
+      move_motor(motor, 0);
+      return;
+    }
+    if (delta > 0) {
+      move_motor(motor, -45);
+    } else {
+      move_motor(motor, 45);
+    }
   } else {
-    PIDControllerV.SetTunings(kp, ki, kd);    // Make sure the PID tunings are set
-    PIDControllerV.SetOutputLimits(-50, 50);  // Constrain the output to -60/60
-    PIDControllerV.SetMode(AUTOMATIC);        // Set the PID to automatic mode
-
-    // Update the PID controller with the current angle and desired angle
-    PIDControllerV.Compute();
-
-    // Use the output from the PID to move the motor
-    move_motor(motor, motorOutputV);
+    // don't use PID
+    // convert desired angle to 360
+    desiredAngle = fmod(desiredAngle + 360, 360);
+    double delta = desiredAngle - adjustedAngle;
+    if (abs(delta) <= 10) {
+      move_motor(motor, 0);
+      return;
+    }
+    if (delta > 0) {
+      move_motor(motor, -40);
+    } else {
+      move_motor(motor, 40);
+    }
   }
+  // Calculate the shortest path to the desired angle. The desired angle can be negative.
+  // desiredAngle = fmod(desiredAngle + 360, 360);
+  // adjustedAngle = fmod(adjustedAngle + 360, 360);
+  // double delta = desiredAngle - adjustedAngle;
+  // if (delta > 180) {
+  //   delta -= 360;
+  // } else if (delta < -180) {
+  //   delta += 360;
+  // }
+
+  // // For MOTOR_V, ensure delta does not imply crossing the dead zone.
+  // if (motor == MOTOR_V) {
+  //   // Adjust delta to avoid the dead zone (-135 to +135 degrees range)
+  //   if (delta > 135) {
+  //     delta -= 270;
+  //   } else if (delta < -135) {
+  //     delta += 270;
+  //   }
+  // }
+
+  // // If delta is within the leeway, stop the motor
+  // if (abs(delta) <= 10) {
+  //   move_motor(motor, 0);
+  //   return;
+  // }
+
+  // // Update the PID Controller
+  // if (motor == MOTOR_V) {
+  //   PIDControllerV.SetTunings(kp, ki, kd);       // Make sure the PID tunings are set
+  //   PIDControllerV.SetOutputLimits(-45, 45);     // Constrain the output to -50/50
+  //   PIDControllerV.SetMode(AUTOMATIC);           // Set the PID to automatic mode
+  //   PIDControllerV.Compute();                    // Compute the PID output
+  // } else {
+  //   PIDControllerH.SetTunings(kp, ki, kd);       // Make sure the PID tunings are set
+  //   PIDControllerH.SetOutputLimits(-45, 45);     // Constrain the output to -50/50
+  //   PIDControllerH.SetMode(AUTOMATIC);           // Set the PID to automatic mode
+  //   PIDControllerH.Compute();                    // Compute the PID output
+  // }
+
+  // // Use the output from the PID to move the motor
+  // motorOutput = (motor == MOTOR_V) ? motorOutputV : motorOutputH;
+  // move_motor(motor, motorOutput);
 }
 
 void displayPrint(String text) {
