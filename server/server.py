@@ -67,7 +67,7 @@ def get_sensor_data():
         data = ser.readline().decode('utf-8', errors='ignore').strip()
         
         # Parse the CSV data from esp32
-        global lat, lon, alt
+        global lat, lon, alt, azi, ele
         lat, lon, alt, azi, ele = data.split(',')
         coords = {
             'latitude': float(lat),
@@ -114,6 +114,7 @@ def calculate_iss_position():
     SGP4 is used for velocity and radius position calculations.
     """
     try:
+        get_sensor_data()
         # get the current geolocation
         global lat, lon, alt
         if lat == 0 and lon == 0 and alt == 0:
