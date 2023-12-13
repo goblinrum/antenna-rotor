@@ -7,8 +7,10 @@ import requests
 import serial
 from flask import Flask, jsonify, request
 from sgp4.api import WGS72, Satrec, accelerated, jday
+from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
+cors = CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Setup the serial connection
 ser = None
@@ -86,7 +88,8 @@ def send_iss_location_to_esp():
     Get the current position of the ISS from Open Notify API
     and send it to the ESP32
     """
-    res, status_code = get_iss_location()
+    id = request.args.get('id')
+    res, status_code = get_iss_location(id)
     if status_code == 200:
         # send the 3 lines of data to the ESP32
         data = res
@@ -243,31 +246,24 @@ def get_geolocation():
         return data['loc'].split(',')
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting geolocation: {e}'}), 500
-    
-def get_iss_location():
+
+@app.route('/get_iss_location')    
+def get_iss_location(id = 25544):
     """
-    Get the current TLE data. 
+    Get the current position of the ISS. Optional param called id passed in to pass to the API.
     """
     try:
-        # if the last update is within the past hour and the TLE data is not None, then return the TLE data cached
-        global tle, last_updated
-        if last_updated and (datetime.now() - last_updated).seconds < 3600 and tle:
-            return tle, 200
-        response = requests.get('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle')
-        data = response.text.splitlines()
-        res = []
+        if id:
+            response = requests.get(f'https://tle.ivanstanojevic.me/api/tle/{id}')
+        else:
+            response = requests.get('https://tle.ivanstanojevic.me/api/tle/25544')
         # iterate through and find the ISS, then return that and the next two lines
-        for i, line in enumerate(data):
-            if line.startswith('ISS (ZARYA)'):
-                res.append("ISS (ZARYA)")
-                res.append(data[i+1].strip())
-                res.append(data[i+2].strip())
-                # then add current unix time as an int
-                res.append(str(int(datetime.now().timestamp())))
-                break
-        # cache the TLE data
-        tle = res
-        last_updated = datetime.now()
+        res = []
+        response = response.json()
+        res.append(response['name'])
+        res.append(response['line1'])
+        res.append(response['line2'])
+        res.append(str(int(datetime.now().timestamp())))
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500
