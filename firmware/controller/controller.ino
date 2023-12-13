@@ -42,10 +42,10 @@ AS5600 as5600_1(&Wire1);
 double offsetH = 0;
 double offsetV = 0;
 double adjustedAngleH = 0;
-double desiredAngleH = 45;
+double desiredAngleH = 0;
 double motorOutputH = 0;
 double adjustedAngleV = 0;
-double desiredAngleV = 45;
+double desiredAngleV = 0;
 double motorOutputV = 0;
 
 // PID coefficients
@@ -71,9 +71,9 @@ char *token;
 const char delimiter[2] = ",";
 
 // positional arguments
-float lat = 37.8716;        // latitude
-float lon = -122.2728;        // longitude
-float alt = 140;        // altutide
+float lat = 0;        // latitude
+float lon = 0;        // longitude
+float alt = 0;        // altutide
 float azi = 0;        // azimuth
 float ele = 0;        // elevation
 float satLat = 0;     // satellite lat
@@ -133,7 +133,7 @@ void setup() {
   // setup LED
   pinMode(LED, OUTPUT);
   // setup GPS
-  // setup_gps();
+  setup_gps();
   // setup encoders
   setup_encoders();
   // calibrate encoders
@@ -207,7 +207,7 @@ void process_tle() {
     line2.toCharArray(tle_1, 70);
     line3.toCharArray(tle_2, 70);
     // line 4 is a number with current unix time
-    unixtime = line4.toInt();
+    unixtime = line4.toInt() + 5;
 
     // set the RTC
     rtc.setTime(unixtime);
@@ -223,8 +223,10 @@ Performs first time setup if not done yet, then loops to do the actual predictio
 void predict() {
   if (done_setup) {  // predict based on new unixtime
     sat.findsat(rtc.getEpoch());
-    // setDesiredAngle(azi, ele);
+    setDesiredAngle(azi, ele);
     framerate += 1;
+    // displayPrint("T: " + String(desiredAngleH) + "\t" + String(desiredAngleV) + "\nCalc: " + String(azi) + "\t" + String(ele) + "\n" + String(satLon) + "\t" + String(satLat));
+    // state = PREDICT;
     state = TRACK_MOTOR;
   } else {  // first time setup
     sat.site(lat, lon, alt);
@@ -243,17 +245,18 @@ Moves the motor to input azimuth and elevation
 3. Moves the motor to the desired angle
 */
 void track_motor() {
-  displayPrint(String(desiredAngleH) + "\t" + String(desiredAngleV) + "\n" + String(adjustedAngleH) + "\t" + String(adjustedAngleV));
-  desiredAngleH++;
-  desiredAngleV++;
+  displayPrint("T: " + String(desiredAngleH) + "\t" + String(desiredAngleV) + "\nC" + String(adjustedAngleH) + "\t" + String(adjustedAngleV) + "\n" + String(satVis));
+  // desiredAngleH += 0.25;
+  // desiredAngleV += 0.25;
 
   getAngle();  // Update the current angle of the motors
+  if (satVis) {
+    // Adjusting Horizontal Motor
+    adjustMotor(MOTOR_H, desiredAngleH, adjustedAngleH, motorOutputH);
 
-  // Adjusting Horizontal Motor
-  adjustMotor(MOTOR_H, desiredAngleH, adjustedAngleH, motorOutputH);
-
-  // Adjusting Vertical Motor
-  adjustMotor(MOTOR_V, desiredAngleV, adjustedAngleV, motorOutputV);
+    // Adjusting Vertical Motor
+    adjustMotor(MOTOR_V, desiredAngleV, adjustedAngleV, motorOutputV);
+  }
 
   // update server
   state = UPDATE_SERVER;
@@ -388,7 +391,7 @@ void setup_encoders() {
   as5600_0.setDirection(AS5600_CLOCK_WISE);
   delay(1000);
   as5600_1.begin();  // (SDA, SCL)
-  as5600_1.setDirection(AS5600_CLOCK_WISE);
+  as5600_1.setDirection(AS5600_COUNTERCLOCK_WISE);
   delay(1000);
 
   as5600_0.resetPosition();
@@ -451,8 +454,8 @@ void Motor_Brake(int pinIN1, int pinIN2) {
 }
 
 void getAngle() {
-  adjustedAngleH = as5600_0.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetH + 180;
-  adjustedAngleV = as5600_1.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetV + 90;
+  adjustedAngleH = as5600_0.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetH;
+  adjustedAngleV = as5600_1.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetV;
   if (adjustedAngleH < 0) {
     adjustedAngleH += 360;
   } else if (adjustedAngleH >= 360) {
@@ -467,29 +470,41 @@ void getAngle() {
 
 void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, double &motorOutput) {
   if (motor == MOTOR_V) {
+    if (adjustedAngle < -35 || adjustedAngle > 220) {
+      move_motor(motor, 0);
+      return;
+    }
+    if (desiredAngle > 220 && desiredAngle < 320) {
+      move_motor(motor, 0);
+      return;
+    }
     // don't use PID
     // convert desired angle to 360
     desiredAngle = fmod(desiredAngle + 360, 360);
     double delta = desiredAngle - adjustedAngle;
-    if (abs(delta) <= 5) {
+    if (desiredAngle > 320 && abs(delta) > 3) {
+      move_motor(motor, 40);
+      return;
+    }
+    if (abs(delta) <= 4) {
       move_motor(motor, 0);
       return;
     }
     if (delta > 0) {
-      move_motor(motor, -45);
+      move_motor(motor, -40);
     } else {
-      move_motor(motor, 45);
+      move_motor(motor, 40);
     }
   } else {
     // don't use PID
     // convert desired angle to 360
     desiredAngle = fmod(desiredAngle + 360, 360);
     double delta = desiredAngle - adjustedAngle;
-    if (abs(delta) <= 10) {
+    if (abs(delta) <= 4) {
       move_motor(motor, 0);
       return;
     }
-    if (delta > 0) {
+    if (delta > 0 || abs(delta) > 180) {
       move_motor(motor, -40);
     } else {
       move_motor(motor, 40);
@@ -549,5 +564,9 @@ void displayPrint(String text) {
 void setDesiredAngle(double azimuth, double elevation) {
   // sets azimuth and elevation to desired angle
   desiredAngleH = azimuth;
-  desiredAngleV = elevation;
+  if (elevation < 0) {
+    desiredAngleV = elevation + 360;
+  } else if (elevation >= 360) {
+    desiredAngleV = elevation - 360;
+  }
 }

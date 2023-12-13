@@ -7,8 +7,10 @@ import requests
 import serial
 from flask import Flask, jsonify, request
 from sgp4.api import WGS72, Satrec, accelerated, jday
+from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
+cors = CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Setup the serial connection
 ser = None
@@ -83,7 +85,8 @@ def send_iss_location_to_esp():
     Get the current position of the ISS from Open Notify API
     and send it to the ESP32
     """
-    res, status_code = get_iss_location()
+    id = request.args.get('id')
+    res, status_code = get_iss_location(id)
     if status_code == 200:
         # send the 3 lines of data to the ESP32
         data = res
@@ -125,11 +128,11 @@ def calculate_iss_position():
         # get the TLE data
         tle, status_code = get_iss_location()
         if status_code == 200:
-            tle_line1, tle_line2 = tle
+            name, tle_line1, tle_line2, unixtime = tle
             # sat is for SGP4 calculations
             # iss is for ephem calculations
             sat = Satrec.twoline2rv(tle_line1, tle_line2)
-            iss = ephem.readtle('ISS (ZARYA)', tle_line1, tle_line2)
+            iss = ephem.readtle(name, tle_line1, tle_line2)
             # use ephem to calculate relative position
             iss.compute(observer)
             e, r, v = sat.sgp4(jd, fr)
@@ -240,24 +243,24 @@ def get_geolocation():
         return data['loc'].split(',')
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting geolocation: {e}'}), 500
-    
-def get_iss_location():
+
+@app.route('/get_iss_location')    
+def get_iss_location(id = 25544):
     """
-    Get the current position of the ISS from Open Notify API
+    Get the current position of the ISS. Optional param called id passed in to pass to the API.
     """
     try:
-        response = requests.get('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle')
-        data = response.text.splitlines()
-        res = []
+        if id:
+            response = requests.get(f'https://tle.ivanstanojevic.me/api/tle/{id}')
+        else:
+            response = requests.get('https://tle.ivanstanojevic.me/api/tle/25544')
         # iterate through and find the ISS, then return that and the next two lines
-        for i, line in enumerate(data):
-            if line.startswith('ISS (ZARYA)'):
-                res.append("ISS (ZARYA)")
-                res.append(data[i+1].strip())
-                res.append(data[i+2].strip())
-                # then add current unix time as an int
-                res.append(str(int(datetime.now().timestamp())))
-                break
+        res = []
+        response = response.json()
+        res.append(response['name'])
+        res.append(response['line1'])
+        res.append(response['line2'])
+        res.append(str(int(datetime.now().timestamp())))
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500
