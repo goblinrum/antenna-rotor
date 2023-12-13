@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Include the CesiumJS JavaScript and CSS files -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script src="get_iss.js"></script>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <script type="module">
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxMjcyMGFiZC0wYzc3LTQ1YjgtYmQyYS1iMTM5YmVkOGE5ZWUiLCJpZCI6MTc5NjExLCJpYXQiOjE3MDA1MDE1OTN9.09PsRneHLzb-idmJXLkQ5XFcqZiyuoVz4H6q9LKVMKw'
+
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+        terrain: Cesium.Terrain.fromWorldTerrain(),
+        });
+
+        const osmBuildings = await Cesium.createOsmBuildingsAsync();
+        viewer.scene.primitives.add(osmBuildings);
+        
+        // issData = [azimuth, elevation, latitude, longitude, user_latitude, user_longitude]
+        const issData = await getISSData();
+        const azimuth = issData[0];
+        const elevation = issData[1];
+        const latitude = issData[2];
+        const longitude = issData[3];
+        const user_latitude = issData[4];
+        const user_longitude = issData[5];
+
+        // iss setup
+        const positionProperty = new Cesium.SampledPositionProperty();
+        const issURI = await Cesium.IonResource.fromAssetId(2360385);
+        const issEntity = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000),
+          model: { uri: issURI, scale: 50000 },
+          polyline: {
+            positions: positionProperty,
+            width: 20,
+            material: Cesium.Color.RED,
+          } 
+        });
+
+        // antenna setup
+        const antennaURI = await Cesium.IonResource.fromAssetId(2378468);
+        const antennaEntity = viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(user_longitude, user_latitude), 
+            model: { uri: antennaURI, scale: 5000 } 
+        });  
+        const initialOrientation = Cesium.Transforms.headingPitchRollQuaternion(
+          antennaEntity.position,
+          new Cesium.HeadingPitchRoll(azimuth, -elevation, 0)
+        );
+        antennaEntity.orientation = initialOrientation;       
+        
+        // update entire model
+        async function update() {
+          const issData = await getISSData();
+          const azimuth = issData[0];
+          const elevation = issData[1];
+          const latitude = issData[2];
+          const longitude = issData[3];
+          const user_latitude = issData[4];
+          const user_longitude = issData[5];
+
+          // iss position update
+          issEntity.position = Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000);
+          const time = Cesium.JulianDate.now();
+          positionProperty.addSample(time, Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000));
+          console.log(positionProperty);
+          
+          // antenna orientation update
+          /* const orientation = Cesium.Transforms.headingPitchRollQuaternion(
+            antennaEntity.position,
+            new Cesium.HeadingPitchRoll(azimuth, -elevation, 0)
+          );
+          antennaEntity.orientation = orientation; */
+
+          // calls update function after specified time
+          // setInterval(update, 10000);
+        };
+        
+        // update();
+
+        viewer.scene.postRender.addEventListener(() => {
+          update();
+        });
+
+  </script>
+ </div>
+</body>
+</html>
