@@ -492,7 +492,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
       move_motor(motor, 40);
       return;
     }
-    if (abs(delta) <= 4) {
+    if (abs(delta) <= 6) {
       move_motor(motor, 0);
       return;
     }
@@ -506,7 +506,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
     // convert desired angle to 360
     desiredAngle = fmod(desiredAngle + 360, 360);
     double delta = desiredAngle - adjustedAngle;
-    if (abs(delta) <= 4) {
+    if (abs(delta) <= 6) {
       move_motor(motor, 0);
       return;
     }
