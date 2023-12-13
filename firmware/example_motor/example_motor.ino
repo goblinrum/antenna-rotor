@@ -1,172 +1,125 @@
-/****************************************************************************** 
-SparkFun Big Easy Driver Basic Demo
-Toni Klopfenstein @ SparkFun Electronics
-February 2015
-https://github.com/sparkfun/Big_Easy_Driver
+#include "AS5600.h"
+#include "Wire.h"
+#include <PID_v1.h>
 
-Simple demo sketch to demonstrate how 5 digital pins can drive a bipolar stepper motor,
-using the Big Easy Driver (https://www.sparkfun.com/products/12859). Also shows the ability to change
-microstep size, and direction of motor movement.
+#define IN1 2
+#define IN2 4
+#define PWM 15
 
-Development environment specifics:
-Written in Arduino 1.6.0
+AS5600 as5600;   //  use default Wire
 
-This code is beerware; if you see me (or any other SparkFun employee) at the local, and you've found our code helpful, please buy us a round!
-Distributed as-is; no warranty is given.
+double offset = 0;
+double adjustedAngle = 0;
+double desiredAngle = 0;
+double motorOutput = 0;
 
-Example based off of demos by Brian Schmalz (designer of the Big Easy Driver).
-http://www.schmalzhaus.com/EasyDriver/Examples/EasyDriverExamples.html
-******************************************************************************/
-//Declare pin functions on Arduino
-#define stp 2
-#define dir 3
-#define MS1 4
-#define MS2 5
-#define MS3 6
-#define EN  7
-
-//Declare variables for functions
-char user_input;
-int x;
-int y;
-int state;
+// PID coefficients
+double kp = 5;  // Proportional coefficient
+double ki = 0.1;  // Integral coefficient
+double kd = 0.05;  // Derivative coefficient
+PID myPID(&adjustedAngle, &output, &desiredAngle, kp, ki, kd, DIRECT);
 
 void setup() {
-  pinMode(stp, OUTPUT);
-  pinMode(dir, OUTPUT);
-  pinMode(MS1, OUTPUT);
-  pinMode(MS2, OUTPUT);
-  pinMode(MS3, OUTPUT);
-  pinMode(EN, OUTPUT);
-  resetBEDPins(); //Set step, direction, microstep and enable pins to default states
-  Serial.begin(9600); //Open Serial connection for debugging
-  Serial.println("Begin motor control");
-  Serial.println();
-  //Print function list for user selection
-  Serial.println("Enter number for control option:");
-  Serial.println("1. Turn at default microstep mode.");
-  Serial.println("2. Reverse direction at default microstep mode.");
-  Serial.println("3. Turn at 1/16th microstep mode.");
-  Serial.println("4. Step forward and reverse directions.");
-  Serial.println();
+
+  // Serial begin
+  Serial.begin(9600);
+  Serial.println(__FILE__);
+  Serial.print("AS5600_LIB_VERSION: ");
+  Serial.println(AS5600_LIB_VERSION);
+
+  as5600.begin(4);  //  set direction pin.
+  as5600.setDirection(AS5600_CLOCK_WISE);  // default, just be explicit.
+  Serial.println(as5600.getAddress());
+
+  int b = as5600.isConnected();
+  Serial.print("Connect: ");
+  Serial.println(b);
+
+  delay(1000);
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(PWM, OUTPUT);
+
+  calibrate_encoder();
+
+  myPID.SetMode(AUTOMATIC);
 }
 
-//Main loop
 void loop() {
-  while(Serial.available()){
-      user_input = Serial.read(); //Read user input and trigger appropriate function
-      digitalWrite(EN, LOW); //Pull enable pin low to set FETs active and allow motor control
-      if (user_input =='1')
-      {
-         StepForwardDefault();
-      }
-      else if(user_input =='2')
-      {
-        ReverseStepDefault();
-      }
-      else if(user_input =='3')
-      {
-        SmallStepMode();
-      }
-      else if(user_input =='4')
-      {
-        ForwardBackwardStep();
-      }
-      else
-      {
-        Serial.println("Invalid option entered.");
-      }
-      resetBEDPins();
+  getAngle();
+  Serial.println("Enter an angle between 0 and 360");
+  if (Serial.available() > 0) {
+    desiredAngle = Serial.parseFloat();
+  }
+  desiredAngle = Serial.parseFloat();
+  myPID.Compute();
+  move_to_angle();
+  delay(100);
+  Serial.print("Desired angle: ");
+  Serial.println(desiredAngle);
+  Serial.print("Adjusted angle: ");
+  Serial.println(adjustedAngle);
+  Serial.print("Output: ");
+  Serial.println(output);
+
+}
+
+void calibrate_encoder() {
+  Serial.println("Move the motor to the zero position");
+  delay(2000);
+  offset = as5600.rawAngle() * AS5600_RAW_TO_DEGREES;
+  Serial.println("Calibration complete");
+  Serial.print("Offset: ");
+  Serial.println(offset);
+}
+
+void getAngle() {
+  adjustedAngle = as5600.rawAngle() * AS5600_RAW_TO_DEGREES - offset;
+  if (adjustedAngle < 0) {
+    adjustedAngle += 360;
+  } else if (adjustedAngle >= 360) {
+    adjustedAngle -= 360;
   }
 }
 
-//Reset Big Easy Driver pins to default states
-void resetBEDPins()
-{
-  digitalWrite(stp, LOW);
-  digitalWrite(dir, LOW);
-  digitalWrite(MS1, LOW);
-  digitalWrite(MS2, LOW);
-  digitalWrite(MS3, LOW);
-  digitalWrite(EN, HIGH);
+void move_to_angle() {
+  float leeway = 5;
+  // find delta considering mod 360
+  float delta = int(desiredAngle - adjustedAngle) % 360;
+  if (abs(delta) < leeway) {
+    move_motor(0);
+  } else {
+    // constrain motor output to -70/70
+    output = constrain(output, -60, 60);
+    move_motor(output);
+  }
 }
 
-//Default microstep mode function
-void StepForwardDefault()
-{
-  Serial.println("Moving forward at default step mode.");
-  digitalWrite(dir, LOW); //Pull direction pin low to move "forward"
-  for(x= 0; x<1000; x++)  //Loop the forward stepping enough times for motion to be visible
-  {
-    digitalWrite(stp,HIGH); //Trigger one step forward
-    delay(1);
-    digitalWrite(stp,LOW); //Pull step pin low so it can be triggered again
-    delay(1);
+
+void move_motor(int speed) {
+  if (speed > 0) {
+    Motor_Forward(speed);
+  } else if (speed < 0) {
+    Motor_Backward(-speed);
+  } else {
+    Motor_Brake();
   }
-  Serial.println("Enter new option");
-  Serial.println();
 }
 
-//Reverse default microstep mode function
-void ReverseStepDefault()
-{
-  Serial.println("Moving in reverse at default step mode.");
-  digitalWrite(dir, HIGH); //Pull direction pin high to move in "reverse"
-  for(x= 0; x<1000; x++)  //Loop the stepping enough times for motion to be visible
-  {
-    digitalWrite(stp,HIGH); //Trigger one step
-    delay(1);
-    digitalWrite(stp,LOW); //Pull step pin low so it can be triggered again
-    delay(1);
-  }
-  Serial.println("Enter new option");
-  Serial.println();
+void Motor_Forward(int Speed) {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(PWM, Speed);
 }
 
-// 1/16th microstep foward mode function
-void SmallStepMode()
-{
-  Serial.println("Stepping at 1/16th microstep mode.");
-  digitalWrite(dir, LOW); //Pull direction pin low to move "forward"
-  digitalWrite(MS1, HIGH); //Pull MS1,MS2, and MS3 high to set logic to 1/16th microstep resolution
-  digitalWrite(MS2, HIGH);
-  digitalWrite(MS3, HIGH);
-  for(x= 0; x<1000; x++)  //Loop the forward stepping enough times for motion to be visible
-  {
-    digitalWrite(stp,HIGH); //Trigger one step forward
-    delay(1);
-    digitalWrite(stp,LOW); //Pull step pin low so it can be triggered again
-    delay(1);
-  }
-  Serial.println("Enter new option");
-  Serial.println();
+void Motor_Backward(int Speed) {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  analogWrite(PWM, Speed);
 }
 
-//Forward/reverse stepping function
-void ForwardBackwardStep()
-{
-  Serial.println("Alternate between stepping forward and reverse.");
-  for(x= 1; x<5; x++)  //Loop the forward stepping enough times for motion to be visible
-  {
-    //Read direction pin state and change it
-    state=digitalRead(dir);
-    if(state == HIGH)
-    {
-      digitalWrite(dir, LOW);
-    }
-    else if(state ==LOW)
-    {
-      digitalWrite(dir,HIGH);
-    }
-    
-    for(y=0; y<1000; y++)
-    {
-      digitalWrite(stp,HIGH); //Trigger one step
-      delay(1);
-      digitalWrite(stp,LOW); //Pull step pin low so it can be triggered again
-      delay(1);
-    }
-  }
-  Serial.println("Enter new option");
-  Serial.println();
+void Motor_Brake() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
 }

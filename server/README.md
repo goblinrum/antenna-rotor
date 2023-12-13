@@ -82,6 +82,66 @@ Example data returned:
     * `latitude` - The latitude of the user
     * `longitude` - The longitude of the user
 
+#### GET /predict_iss_position?start={start_time_epoch}&end={end_time_epoch}&step={step_size_seconds}
+
+Example Usage: `GET http://localhost:5000/predict_iss_position?start=1701937618&stop=1701937698&step=10`
+
+Example data returned (list of JSON objects with the same format as `/calculate_iss_position`): 
+```json
+[
+  {
+    "iss_direction": {
+      "radius position": [
+        6642.787529650961,
+        350.13474505728414,
+        1382.3819406969144
+      ],
+      "velocity": [
+        0.9568378682240839,
+        4.912324265934913,
+        -5.802696783663077
+      ]
+    },
+    "iss_position": {
+      "azimuth": 112.43448966362624,
+      "elevation": -18.913222406135727,
+      "latitude": 11.73976927277929,
+      "longitude": -79.25394977008122
+    },
+    "user_location": {
+      "altitude": 0.0,
+      "latitude": 37.8716,
+      "longitude": -122.2728
+    }
+  },
+  {
+    "iss_direction": {
+      "radius position": [
+        6651.933119910364,
+        399.2345711913688,
+        1324.2681662056075
+      ],
+      "velocity": [
+        0.8722555200781039,
+        4.907556656864941,
+        -5.819966009863101
+      ]
+    },
+    "iss_position": {
+      "azimuth": 112.60909661956845,
+      "elevation": -19.279096856953092,
+      "latitude": 11.239530486835788,
+      "longitude": -78.87829619591969
+    },
+    "user_location": {
+      "altitude": 0.0,
+      "latitude": 37.8716,
+      "longitude": -122.2728
+    }
+  }, ...
+]
+```
+
 Calculations will run using the server's geolocation if the ESP32 is not connected or if no data is received from the ESP32.
 
 ### COM Port endpoints

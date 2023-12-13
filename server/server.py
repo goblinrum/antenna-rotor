@@ -5,10 +5,12 @@ from datetime import datetime
 import ephem
 import requests
 import serial
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from sgp4.api import WGS72, Satrec, accelerated, jday
+from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
+cors = CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Setup the serial connection
 ser = None
@@ -17,7 +19,11 @@ ser = None
 lat = 0
 lon = 0
 alt = 0
+azi = 0
+ele = 0
 
+tle = None
+last_updated = None
 
 #################### COM PORT CONTROLS ####################
 # These are used to connect to the ESP32 via serial communication
@@ -61,17 +67,20 @@ def get_sensor_data():
         data = ser.readline().decode('utf-8', errors='ignore').strip()
         
         # Parse the CSV data from esp32
-        coords = {
-            'data': data,
-        }
-
         global lat, lon, alt
-        lat, lon, alt = data.split(',')
+        lat, lon, alt, azi, ele = data.split(',')
+        coords = {
+            'latitude': float(lat),
+            'longitude': float(lon),
+            'altitude': float(alt),
+            'azimuth': float(azi),
+            'elevation': float(ele),
+        }
         return coords, 200
     except serial.SerialException as e:
         return jsonify({'error': f'Serial communication error: {e}'}), 500
     except ValueError as e:
-        return jsonify({'error': f'Data parsing error: {e}'}), 500
+        return jsonify({'error': f'Data parsing error: {e}\n, actual data {data}'}), 500
     
 @app.route('/send_position_to_esp')
 def send_iss_location_to_esp():
@@ -79,7 +88,8 @@ def send_iss_location_to_esp():
     Get the current position of the ISS from Open Notify API
     and send it to the ESP32
     """
-    res, status_code = get_iss_location()
+    id = request.args.get('id')
+    res, status_code = get_iss_location(id)
     if status_code == 200:
         # send the 3 lines of data to the ESP32
         data = res
@@ -121,11 +131,11 @@ def calculate_iss_position():
         # get the TLE data
         tle, status_code = get_iss_location()
         if status_code == 200:
-            tle_line1, tle_line2 = tle
+            satname, tle_line1, tle_line2, unixtime = tle
             # sat is for SGP4 calculations
             # iss is for ephem calculations
             sat = Satrec.twoline2rv(tle_line1, tle_line2)
-            iss = ephem.readtle('ISS (ZARYA)', tle_line1, tle_line2)
+            iss = ephem.readtle(satname, tle_line1, tle_line2)
             # use ephem to calculate relative position
             iss.compute(observer)
             e, r, v = sat.sgp4(jd, fr)
@@ -153,7 +163,76 @@ def calculate_iss_position():
             return jsonify({'error': 'Error getting ISS location'}), 500
     except Exception as e:
         return jsonify({'error': f'Error calculating ISS position: {e}'}), 500
+    
+@app.route('/predict_iss_position')
+def predict_iss_position():
+    """
+    Predicts the position of the ISS given a start, stop, and step time.
+    Uses the same logic as calculate_iss_position when determining geolocation.
+    Args:
+        start: the start time in unix time
+        stop: the stop time in unix time
+        step: the step time in seconds
 
+    Returns:
+        A list of positions of the ISS for each step time
+    """
+    # read the args
+    start = int(request.args.get('start'))
+    stop = int(request.args.get('stop'))
+    step = int(request.args.get('step'))
+
+    try:
+        # get the current geolocation
+        global lat, lon, alt
+        if lat == 0 and lon == 0 and alt == 0:
+            lat, lon = get_geolocation()
+            alt = 0
+        # use ephem to calculate the position
+        observer = ephem.Observer()
+        observer.lat = lat
+        observer.lon = lon
+        observer.elevation = alt
+        # get the TLE data
+        tle, status_code = get_iss_location()
+        if status_code == 200:
+            satname, tle_line1, tle_line2, unixtime = tle
+            # sat is for SGP4 calculations
+            # iss is for ephem calculations
+            sat = Satrec.twoline2rv(tle_line1, tle_line2)
+            iss = ephem.readtle(satname, tle_line1, tle_line2)
+            # use ephem to calculate relative position
+            res = []
+            for i in range(start, stop, step):
+                # convert start time to julian date
+                converted_time = datetime.fromtimestamp(i)
+                observer.date = converted_time
+                jd = ephem.julian_date(observer)
+                fr = 0.0
+                e, r, v = sat.sgp4(jd, fr)
+                iss.compute(observer)
+                res.append({
+                    'iss_position': {
+                        'azimuth': math.degrees(iss.az),
+                        'elevation': math.degrees(iss.alt),
+                        'longitude': math.degrees(iss.sublong),
+                        'latitude': math.degrees(iss.sublat),
+                    },
+                    'iss_direction': {
+                        'velocity': v,
+                        'radius position': r,
+                    },
+                    'user_location': {
+                        'latitude': float(lat),
+                        'longitude': float(lon),
+                        'altitude': float(alt),
+                    },
+                })
+            return jsonify(res), 200
+        else:
+            return jsonify({'error': 'Error getting ISS location'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Error predicting ISS position: {e}'}), 500
 
 #################### HELPER FUNCTIONS ####################
 # These are helper functions used by the API endpoints
@@ -167,21 +246,24 @@ def get_geolocation():
         return data['loc'].split(',')
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting geolocation: {e}'}), 500
-    
-def get_iss_location():
+
+@app.route('/get_iss_location')    
+def get_iss_location(id = 25544):
     """
-    Get the current position of the ISS from Open Notify API
+    Get the current position of the ISS. Optional param called id passed in to pass to the API.
     """
     try:
-        response = requests.get('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle')
-        data = response.text.splitlines()
-        res = []
+        if id:
+            response = requests.get(f'https://tle.ivanstanojevic.me/api/tle/{id}')
+        else:
+            response = requests.get('https://tle.ivanstanojevic.me/api/tle/25544')
         # iterate through and find the ISS, then return that and the next two lines
-        for i, line in enumerate(data):
-            if line.startswith('ISS (ZARYA)'):
-                res.append(data[i+1].strip())
-                res.append(data[i+2].strip())
-                break
+        res = []
+        response = response.json()
+        res.append(response['name'])
+        res.append(response['line1'])
+        res.append(response['line2'])
+        res.append(str(int(datetime.now().timestamp())))
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500
@@ -190,4 +272,4 @@ def get_iss_location():
 #################### CONTROL PANEL ####################
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=9001)
