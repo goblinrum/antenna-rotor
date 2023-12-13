@@ -22,6 +22,9 @@ alt = 0
 azi = 0
 ele = 0
 
+tle = None
+last_updated = None
+
 #################### COM PORT CONTROLS ####################
 # These are used to connect to the ESP32 via serial communication
 @app.route('/connect_com')
@@ -128,11 +131,11 @@ def calculate_iss_position():
         # get the TLE data
         tle, status_code = get_iss_location()
         if status_code == 200:
-            name, tle_line1, tle_line2, unixtime = tle
+            satname, tle_line1, tle_line2, unixtime = tle
             # sat is for SGP4 calculations
             # iss is for ephem calculations
             sat = Satrec.twoline2rv(tle_line1, tle_line2)
-            iss = ephem.readtle(name, tle_line1, tle_line2)
+            iss = ephem.readtle(satname, tle_line1, tle_line2)
             # use ephem to calculate relative position
             iss.compute(observer)
             e, r, v = sat.sgp4(jd, fr)
@@ -269,4 +272,4 @@ def get_iss_location(id = 25544):
 #################### CONTROL PANEL ####################
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=9001)
