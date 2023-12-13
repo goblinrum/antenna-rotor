@@ -114,7 +114,7 @@ def calculate_iss_position():
     SGP4 is used for velocity and radius position calculations.
     """
     try:
-        get_sensor_data()
+        # get_sensor_data()
         # get the current geolocation
         global lat, lon, alt
         if lat == 0 and lon == 0 and alt == 0:
@@ -125,14 +125,17 @@ def calculate_iss_position():
         observer.date = ephem.now()
         observer.lat = lat
         observer.lon = lon
-        observer.elevation = alt
+        observer.elevation = 0
+        tle, status_code = get_iss_location()
+        satname, tle_line1, tle_line2, unixtime = tle
         # convert the current time to julian date
+        converted_time = datetime.fromtimestamp(int(unixtime))
+        observer.date = converted_time
         jd = ephem.julian_date(observer)
         fr = 0.0
         # get the TLE data
-        tle, status_code = get_iss_location()
+        
         if status_code == 200:
-            satname, tle_line1, tle_line2, unixtime = tle
             # sat is for SGP4 calculations
             # iss is for ephem calculations
             sat = Satrec.twoline2rv(tle_line1, tle_line2)
