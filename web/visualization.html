@@ -5,7 +5,8 @@
   <!-- Include the CesiumJS JavaScript and CSS files -->
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-  <script type="module" src="./get_iss.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script src="get_iss.js"></script>
 </head>
 <body>
   <div id="cesiumContainer"></div>
@@ -18,43 +19,82 @@
 
         const osmBuildings = await Cesium.createOsmBuildingsAsync();
         viewer.scene.primitives.add(osmBuildings);
+        
+        // issData = [azimuth, elevation, latitude, longitude, user_latitude, user_longitude]
+        const issData = await getISSData();
+        const azimuth = Cesium.Math.toRadians(issData[0]);
+        const elevation = Cesium.Math.toRadians(issData[1]);
+        const latitude = issData[2];
+        const longitude = issData[3];
+        const user_latitude = issData[4];
+        const user_longitude = issData[5];
 
-        async function loadModel() {
-        // const initPos = Cesium.Cartesian3.fromDegrees(-118.2437, 34.0522, 5000000);
-        // Load the glTF model from Cesium ion.
-            
-            
-            // issData = [elevation, latitude, longitude, user_latitude, user_longitude]
-            const issData = await getISSData();
-            // const elevation = issData[0];
-            // const latitude = issData[1];
-            // const longitude = issData[2];
-            // const user_latitude = issData[3];
-            // const user_longitude = issData[4];
+        // iss setup
+        const positionProperty = new Cesium.SampledPositionProperty();
+        const issURI = await Cesium.IonResource.fromAssetId(2360385);
+        const issEntity = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000),
+          model: { uri: issURI, scale: 50000 },
+          polyline: {
+            positions: positionProperty,
+            width: 20,
+            material: Cesium.Color.RED,
+          } 
+        });
 
-            // antenna setting and loading
-            const antennaURI = await Cesium.IonResource.fromAssetId(2378468);
-            const antennaEntity = viewer.entities.add({
-                // position: Cesium.Cartesian3.fromDegrees(user_longitude, user_latitude), 
-                position: Cesium.Cartesian3.fromDegrees(0, 0, 0),
+        // antenna setup
+        const antennaURI = await Cesium.IonResource.fromAssetId(2378468);
+        const position = Cesium.Cartesian3.fromDegrees(user_longitude, user_latitude);
+        const initialOrientation = Cesium.Transforms.headingPitchRollQuaternion(
+          position,
+          new Cesium.HeadingPitchRoll(azimuth + 2*(Math.PI/3), -elevation, 0)
+        );
+        const antennaEntity = viewer.entities.add({
+            position: position,
+            orientation: initialOrientation,
+            model: { uri: antennaURI, scale: 25000 }, 
+        }); 
+        
+        // antenna to ISS line
+        const lineEntity = viewer.entities.add({
+            polyline: {
+                positions: new Cesium.CallbackProperty(() => [
+                    antennaEntity.position.getValue(Cesium.JulianDate.now()),
+                    issEntity.position.getValue(Cesium.JulianDate.now()),
+                ], false),
+                width: 2,
+                material: Cesium.Color.BLUE,
+            },
+        });
 
-                model: { uri: antennaURI, scale: 5000 } 
-            });
-            
-            // iss setting and loading
-            const issURI = await Cesium.IonResource.fromAssetId(2360385);
-            const issEntity = viewer.entities.add({
-                // position: Cesium.Cartesian3.fromDegress(longitude, latitude, elevation),
-                position: Cesium.Cartesian3.fromDegrees(0, 0, 5000000),
-                model: { uri: issURI, scale: 50000 },
-                // Trailing path of ISS
-                path: new Cesium.PathGraphics({ width: 1.5, leadTime: -1 })
-            });
-    
-            
-        }
-        loadModel();
-        Sandcastle.finishedLoading();  
+        // update entire model
+        async function update() {
+          const issData = await getISSData();
+          const azimuth = Cesium.Math.toRadians(issData[0]);
+          const elevation = Cesium.Math.toRadians(issData[1]);
+          const latitude = issData[2];
+          const longitude = issData[3];
+          const user_latitude = issData[4];
+          const user_longitude = issData[5];
+
+          // iss position update
+          issEntity.position = Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000);
+          const time = Cesium.JulianDate.now();
+          positionProperty.addSample(time, Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000));
+          // console.log(positionProperty);
+          
+          // antenna orientation update
+          const orientation = Cesium.Transforms.headingPitchRollQuaternion(
+            position,
+            new Cesium.HeadingPitchRoll(azimuth + 2*(Math.PI/3), -elevation, 0)
+          );
+          antennaEntity.orientation = orientation;
+
+          // calls update function after specified time
+          setInterval(update, 1000);
+        };
+        
+        update();
 
   </script>
  </div>

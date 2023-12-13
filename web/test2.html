@@ -22,8 +22,8 @@
         
         // issData = [azimuth, elevation, latitude, longitude, user_latitude, user_longitude]
         const issData = await getISSData();
-        const azimuth = Cesium.Math.toRadians(issData[0]);
-        const elevation = Cesium.Math.toRadians(issData[1]);
+        const azimuth = issData[0];
+        const elevation = issData[1];
         const latitude = issData[2];
         const longitude = issData[3];
         const user_latitude = issData[4];
@@ -44,34 +44,21 @@
 
         // antenna setup
         const antennaURI = await Cesium.IonResource.fromAssetId(2378468);
-        const position = Cesium.Cartesian3.fromDegrees(user_longitude, user_latitude);
-        const initialOrientation = Cesium.Transforms.headingPitchRollQuaternion(
-          position,
-          new Cesium.HeadingPitchRoll(azimuth + 2*(Math.PI/3), -elevation, 0)
-        );
         const antennaEntity = viewer.entities.add({
-            position: position,
-            orientation: initialOrientation,
-            model: { uri: antennaURI, scale: 25000 }, 
-        }); 
+            position: Cesium.Cartesian3.fromDegrees(user_longitude, user_latitude), 
+            model: { uri: antennaURI, scale: 5000 } 
+        });  
+        const initialOrientation = Cesium.Transforms.headingPitchRollQuaternion(
+          antennaEntity.position,
+          new Cesium.HeadingPitchRoll(azimuth, -elevation, 0)
+        );
+        antennaEntity.orientation = initialOrientation;       
         
-        // antenna to ISS line
-        const lineEntity = viewer.entities.add({
-            polyline: {
-                positions: new Cesium.CallbackProperty(() => [
-                    antennaEntity.position.getValue(Cesium.JulianDate.now()),
-                    issEntity.position.getValue(Cesium.JulianDate.now()),
-                ], false),
-                width: 2,
-                material: Cesium.Color.BLUE,
-            },
-        });
-
         // update entire model
         async function update() {
           const issData = await getISSData();
-          const azimuth = Cesium.Math.toRadians(issData[0]);
-          const elevation = Cesium.Math.toRadians(issData[1]);
+          const azimuth = issData[0];
+          const elevation = issData[1];
           const latitude = issData[2];
           const longitude = issData[3];
           const user_latitude = issData[4];
@@ -81,20 +68,24 @@
           issEntity.position = Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000);
           const time = Cesium.JulianDate.now();
           positionProperty.addSample(time, Cesium.Cartesian3.fromDegrees(longitude, latitude, 5000000));
-          // console.log(positionProperty);
+          console.log(positionProperty);
           
           // antenna orientation update
-          const orientation = Cesium.Transforms.headingPitchRollQuaternion(
-            position,
-            new Cesium.HeadingPitchRoll(azimuth + 2*(Math.PI/3), -elevation, 0)
+          /* const orientation = Cesium.Transforms.headingPitchRollQuaternion(
+            antennaEntity.position,
+            new Cesium.HeadingPitchRoll(azimuth, -elevation, 0)
           );
-          antennaEntity.orientation = orientation;
+          antennaEntity.orientation = orientation; */
 
           // calls update function after specified time
-          setInterval(update, 1000);
+          // setInterval(update, 10000);
         };
         
-        update();
+        // update();
+
+        viewer.scene.postRender.addEventListener(() => {
+          update();
+        });
 
   </script>
  </div>
