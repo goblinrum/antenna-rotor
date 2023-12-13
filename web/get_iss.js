@@ -63,7 +63,7 @@ class ISS {
 
 async function getISSData() {
     try {
-        const response = await fetch('http://wednesdays.ddns.net:9001/calculate_iss_position');
+        const response = await fetch('http://localhost:9001/calculate_iss_position');
         
         if (!response.ok) {
             throw new Error(`HTTP error! Status: ${response.status}`);

@@ -283,7 +283,7 @@ Example prediction function taken from:
 https://github.com/Hopperpop/Sgp4-Library/blob/master/examples/Sgp4Tracker/Sgp4Tracker.ino
 */
 void Second_Tick() {
-  unixtime += 2;
+  unixtime += 5;
 
   invjday(sat.satJd, timezone, true, year, mon, day, hr, minute, sec);
 
@@ -494,7 +494,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
       move_motor(motor, 40);
       return;
     }
-    if (abs(delta) <= 4) {
+    if (abs(delta) <= 6) {
       move_motor(motor, 0);
       return;
     }
@@ -508,7 +508,7 @@ void adjustMotor(Motor motor, double &desiredAngle, double &adjustedAngle, doubl
     // convert desired angle to 360
     desiredAngle = fmod(desiredAngle + 360, 360);
     double delta = desiredAngle - adjustedAngle;
-    if (abs(delta) <= 4) {
+    if (abs(delta) <= 6) {
       move_motor(motor, 0);
       return;
     }
