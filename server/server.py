@@ -260,10 +260,10 @@ def get_iss_location(id = 25544):
         # iterate through and find the ISS, then return that and the next two lines
         res = []
         response = response.json()
-        res.append(response['name'])
-        res.append(response['line1'])
-        res.append(response['line2'])
-        res.append(str(int(datetime.now().timestamp())))
+        res.append("ISS (ZARYA)")
+        res.append("1 25544U 98067A   23346.67906868  .00008908  00000+0  16188-3 0  9999")
+        res.append("2 25544  51.6402 164.4314 0001234  45.5486  50.9340 15.50349770429473")
+        res.append("1702480321")
         return res, 200
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Error getting ISS location: {e}'}), 500

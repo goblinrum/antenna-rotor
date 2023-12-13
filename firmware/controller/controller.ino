@@ -71,8 +71,8 @@ char *token;
 const char delimiter[2] = ",";
 
 // positional arguments
-float lat = 0;        // latitude
-float lon = 0;        // longitude
+float lat = 37.8716;        // latitude
+float lon = -122.2728;        // longitude
 float alt = 0;        // altutide
 float azi = 0;        // azimuth
 float ele = 0;        // elevation
@@ -133,7 +133,7 @@ void setup() {
   // setup LED
   pinMode(LED, OUTPUT);
   // setup GPS
-  setup_gps();
+  // setup_gps();
   // setup encoders
   setup_encoders();
   // calibrate encoders
@@ -222,7 +222,7 @@ Performs first time setup if not done yet, then loops to do the actual predictio
 */
 void predict() {
   if (done_setup) {  // predict based on new unixtime
-    sat.findsat(rtc.getEpoch());
+    sat.findsat(unixtime);
     setDesiredAngle(azi, ele);
     framerate += 1;
     // displayPrint("T: " + String(desiredAngleH) + "\t" + String(desiredAngleV) + "\nCalc: " + String(azi) + "\t" + String(ele) + "\n" + String(satLon) + "\t" + String(satLat));
@@ -245,7 +245,7 @@ Moves the motor to input azimuth and elevation
 3. Moves the motor to the desired angle
 */
 void track_motor() {
-  displayPrint("T: " + String(desiredAngleH) + "\t" + String(desiredAngleV) + "\nC" + String(adjustedAngleH) + "\t" + String(adjustedAngleV) + "\n" + String(satVis));
+  displayPrint("T: " + String(desiredAngleH) + "\t" + String(desiredAngleV) + "\nC" + String(adjustedAngleH) + "\t" + String(adjustedAngleV) + "\n" + String(satVis) + "\n" + String(unixtime));
   // desiredAngleH += 0.25;
   // desiredAngleV += 0.25;
 
@@ -283,9 +283,11 @@ Example prediction function taken from:
 https://github.com/Hopperpop/Sgp4-Library/blob/master/examples/Sgp4Tracker/Sgp4Tracker.ino
 */
 void Second_Tick() {
-  unixtime += 1;
+  unixtime += 2;
 
   invjday(sat.satJd, timezone, true, year, mon, day, hr, minute, sec);
+
+  // displayPrint(String(sat.satAz) + "\t" + String(sat.satEl));
 
   azi = sat.satAz;
   ele = sat.satEl;
@@ -293,6 +295,11 @@ void Second_Tick() {
   satLon = sat.satLon;
   satAlt = sat.satAlt;
   satVis = sat.satVis;
+
+  if (ele < 0 || ele > 180) {
+    ele = 90;
+    azi = 0;
+  }
 
   framerate = 0;
 }
@@ -456,6 +463,7 @@ void Motor_Brake(int pinIN1, int pinIN2) {
 void getAngle() {
   adjustedAngleH = as5600_0.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetH;
   adjustedAngleV = as5600_1.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetV;
+  adjustedAngleV *= 1.08;
   if (adjustedAngleH < 0) {
     adjustedAngleH += 360;
   } else if (adjustedAngleH >= 360) {
@@ -568,5 +576,7 @@ void setDesiredAngle(double azimuth, double elevation) {
     desiredAngleV = elevation + 360;
   } else if (elevation >= 360) {
     desiredAngleV = elevation - 360;
+  } else {
+    desiredAngleV = elevation;
   }
 }
