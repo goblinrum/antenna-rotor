@@ -222,7 +222,7 @@ Performs first time setup if not done yet, then loops to do the actual predictio
 */
 void predict() {
   if (done_setup) {  // predict based on new unixtime
-    sat.findsat(rtc.getEpoch());
+    sat.findsat(unixtime);
     setDesiredAngle(azi, ele);
     framerate += 1;
     // displayPrint("T: " + String(desiredAngleH) + "\t" + String(desiredAngleV) + "\nCalc: " + String(azi) + "\t" + String(ele) + "\n" + String(satLon) + "\t" + String(satLat));
@@ -293,6 +293,11 @@ void Second_Tick() {
   satLon = sat.satLon;
   satAlt = sat.satAlt;
   satVis = sat.satVis;
+
+  if (ele < 0 || ele > 180) {
+    ele = 90;
+    azi = 0;
+  }
 
   framerate = 0;
 }
@@ -456,6 +461,7 @@ void Motor_Brake(int pinIN1, int pinIN2) {
 void getAngle() {
   adjustedAngleH = as5600_0.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetH;
   adjustedAngleV = as5600_1.getCumulativePosition() * AS5600_RAW_TO_DEGREES - offsetV;
+  adjustedAngleV *= 1.075;
   if (adjustedAngleH < 0) {
     adjustedAngleH += 360;
   } else if (adjustedAngleH >= 360) {
@@ -568,5 +574,7 @@ void setDesiredAngle(double azimuth, double elevation) {
     desiredAngleV = elevation + 360;
   } else if (elevation >= 360) {
     desiredAngleV = elevation - 360;
+  } else {
+    desiredAngleV = elevation;
   }
 }
